@@ -38,7 +38,7 @@ def get_user_week_records(schedule, user_id):
                 if 0 <= (now - date_obj).days < 7:
                     result.append(item)
             except Exception:
-                pass
+                continue
     return result
 
 def get_next_weekdays(count=10):
@@ -146,6 +146,8 @@ async def handle_time_selection(callback: types.CallbackQuery):
             })
             save_data(data)
             await message.answer("✅ Запись добавлена в расписание!")
+        except ValueError as ve:
+            await message.answer(f"❗ {ve}")
         except Exception:
             await message.answer("❗ Формат некорректен. Попробуй ещё раз по примеру.")
 
@@ -154,10 +156,11 @@ async def handle_time_selection(callback: types.CallbackQuery):
     await callback.answer()
 
 async def unregister_save_record(user_id):
+    # безопасно снимаем все зарегистрированные обработчики сообщений для пользователя
     try:
         dp.message.unregister_all(F.from_user.id == user_id)
     except Exception:
-        pass
+        logging.exception("Ошибка при снятии обработчиков сообщений")
     user_context.pop(user_id, None)
 
 @dp.message(Command("cancel"))
@@ -188,11 +191,13 @@ async def cancel(message: types.Message):
                     user_id,
                     "⚠️ Занятие отменено инструктором в связи с технической необходимостью."
                 )
-            except Exception as e:
-                logging.error(f"Could not send cancellation message to user {user_id}: {e}")
+            except Exception:
+                logging.exception(f"Не удалось отправить сообщение пользователю {user_id}")
         found["status"] = "отменено"
         save_data(data)
         await message.answer("⛔ Сообщение об отмене отправлено ученику. Слот останется занятым.")
+    except ValueError as ve:
+        await message.answer(f"❗ {ve}")
     except Exception:
         await message.answer("❗ Некорректная команда. Пример: /cancel 12.10.2025 14:00 Иван Иванов")
 
@@ -218,8 +223,10 @@ async def view_day_records(message: types.Message):
             for item in records
         ])
         await message.answer(f"📅 Записи на {date_s}:\n\n{text}")
-    except Exception:
+    except ValueError:
         await message.answer("❗ Используй формат: /day 12.10.2025")
+    except Exception:
+        await message.answer("❗ Произошла ошибка при получении записей. Попробуй ещё раз.")
 
 async def main():
     await dp.start_polling(bot)
