@@ -14,6 +14,7 @@ from aiogram.fsm.context import FSMContext
 TOKEN = "7818982442:AAGY-DDMsuvhLg0-Ec1ds43SkAmCltR88cI"
 DATA_FILE = "data.json"
 TELEGRAM_LINK = "https://t.me/sv010ch"
+YOUR_TELEGRAM_ID = 487289287
 
 logging.basicConfig(level=logging.INFO)
 bot = Bot(token=TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
@@ -48,6 +49,17 @@ def get_user_week_records(schedule, user_id):
                 pass
     return result
 
+def get_workdays(count=10):
+    weekdays_ru = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница"]
+    days = []
+    current = date.today()
+    while len(days) < count:
+        if current.weekday() < 5:
+            day_name = weekdays_ru[current.weekday()]
+            days.append((day_name, current.strftime("%d.%m.%Y")))
+        current += timedelta(days=1)
+    return days
+
 @dp.message(Command("start"))
 async def start(message: types.Message):
     keyboard = InlineKeyboardMarkup(
@@ -75,17 +87,6 @@ async def view_schedule(callback: types.CallbackQuery):
         ])
         await callback.message.answer(f"📅 Текущее расписание:\n\n{text}")
     await callback.answer()
-
-def get_workdays(count=10):
-    weekdays_ru = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница"]
-    days = []
-    current = date.today()
-    while len(days) < count:
-        if current.weekday() < 5:
-            day_name = weekdays_ru[current.weekday()]
-            days.append((day_name, current.strftime("%d.%m.%Y")))
-        current += timedelta(days=1)
-    return days
 
 @dp.callback_query(F.data == "add_record")
 async def add_record(callback: types.CallbackQuery):
@@ -139,16 +140,37 @@ async def process_name(message: types.Message, state: FSMContext):
 async def process_address(message: types.Message, state: FSMContext):
     user_id = message.from_user.id
     user_context[user_id]["address"] = message.text.strip()
+    uc = user_context[user_id]
     builder = InlineKeyboardBuilder()
     builder.button(text="✅ Подтвердить запись", callback_data="confirm_entry")
     await message.answer(
-        f"Имя: {user_context[user_id]['name']}\n"
-        f"Фамилия: {user_context[user_id]['surname']}\n"
-        f"Адрес: {user_context[user_id]['address']}\n"
-        "Нажмите кнопку ниже для подтверждения записи.",
+        f"🟢 Ваша запись:\n"
+        f"Имя: {uc['name']}\n"
+        f"Фамилия: {uc['surname']}\n"
+        f"Адрес: {uc['address']}\n"
+        f"Дата: {uc['date']}\n"
+        f"Время: {uc['time']}\n"
+        "Нажмите кнопку ниже для подтверждения.",
         reply_markup=builder.as_markup()
     )
     await state.clear()
+
+async def remind_later(user_id, date_s, time_s, address):
+    dt = datetime.strptime(f"{date_s} {time_s}", "%d.%m.%Y %H:%M")
+    delay = (dt - timedelta(minutes=20) - datetime.now()).total_seconds()
+    if delay > 0:
+        await asyncio.sleep(delay)
+        msg = (
+            f"⏰ Напоминание!\n"
+            f"Занятие через 20 минут.\n"
+            f"Дата: {date_s}\n"
+            f"Время: {time_s}\n"
+            f"Адрес: {address}"
+        )
+        try:
+            await bot.send_message(user_id, msg)
+        except Exception:
+            pass
 
 @dp.callback_query(F.data == "confirm_entry")
 async def confirm_entry(callback: types.CallbackQuery):
@@ -186,9 +208,39 @@ async def confirm_entry(callback: types.CallbackQuery):
         "user_id": user_id
     })
     save_data(data)
-    await callback.message.answer("✅ Запись подтверждена!")
+
+    # Карточка для вас
+    card_text = (
+        f"🟢 Новая запись!\n\n"
+        f"Имя: {name}\n"
+        f"Фамилия: {surname}\n"
+        f"Адрес: {address}\n"
+        f"Дата: {date_s}\n"
+        f"Время: {time_s}"
+    )
+    await bot.send_message(YOUR_TELEGRAM_ID, card_text)
+    # Личное уведомление юзеру
+    msg_user = (
+        f"✅ Вы записаны на занятие!\n"
+        f"Дата: {date_s}\n"
+        f"Время: {time_s}\n"
+        f"Адрес: {address}"
+    )
+    await bot.send_message(user_id, msg_user)
+    # Запуск задачки напоминания за 20 минут
+    asyncio.create_task(remind_later(user_id, date_s, time_s, address))
     user_context.pop(user_id, None)
     await callback.answer()
+
+    # Главное меню для пользователя
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="📅 Расписание", callback_data="view_schedule")],
+            [InlineKeyboardButton(text="✏️ Записаться", callback_data="add_record")],
+            [InlineKeyboardButton(text="💬 Написать инструктору", url=TELEGRAM_LINK)]
+        ]
+    )
+    await callback.message.answer("✅ Запись подтверждена! Вы возвращены в главное меню.", reply_markup=keyboard)
 
 @dp.message(Command("cancel"))
 async def cancel(message: types.Message):
