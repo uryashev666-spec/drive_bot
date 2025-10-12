@@ -11,13 +11,12 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 TOKEN = "7818982442:AAGY-DDMsuvhLg0-Ec1ds43SkAmCltR88cI"
 DATA_FILE = "data.json"
-TELEGRAM_LINK = "https://t.me/sv010ch" # Убедитесь, что это правильная ссылка
+TELEGRAM_LINK = "https://t.me/sv010ch"
 
 logging.basicConfig(level=logging.INFO)
-
 bot = Bot(token=TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher()
-user_context = {}  # Для хранения выбранных пользователем даты и времени
+user_context = {}
 
 def load_data():
     try:
@@ -64,28 +63,24 @@ async def view_schedule(callback: types.CallbackQuery):
         await callback.message.answer("📭 Расписание пока пустое.")
     else:
         text = "\n".join([
-            f'• {item["date"]}, {item["time"]}, {item.get("name", "")} {item.get("surname", "")}, {item.get("address", "")}' +
-            (" [Отмена]" if item.get("status") == "отменено" else "")
+            f'• {item["date"]}, {item["time"]}, {item.get("name", "")} {item.get("surname", "")}, {item.get("address", "")}'
+            + (" [Отмена]" if item.get("status") == "отменено" else "")
             for item in data["schedule"]
         ])
         await callback.message.answer(f"📅 Текущее расписание:\n\n{text}")
     await callback.answer()
 
-# ----------- ЛОГИКА ЗАПИСИ ------------------
-
-# Генератор рабочих дней, начиная с текущей (будние дни)
 def get_workdays(count=10):
     weekdays_ru = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница"]
     days = []
     current = date.today()
     while len(days) < count:
-        if current.weekday() < 5:  # Только будни (0-4)
+        if current.weekday() < 5:
             day_name = weekdays_ru[current.weekday()]
             days.append((day_name, current.strftime("%d.%m.%Y")))
         current += timedelta(days=1)
     return days
 
-# Шаг 1. Показываем кнопки рабочих дней с датами
 @dp.callback_query(F.data == "add_record")
 async def add_record(callback: types.CallbackQuery):
     days = get_workdays(10)
@@ -96,7 +91,6 @@ async def add_record(callback: types.CallbackQuery):
     await callback.message.answer("📅 Выберите день занятия:", reply_markup=builder.as_markup())
     await callback.answer()
 
-# Шаг 2. После выбора дня показываем кнопки времени занятий
 @dp.callback_query(F.data.startswith("select_day:"))
 async def select_day(callback: types.CallbackQuery):
     selected_date = callback.data.split(":", 1)[1]
@@ -113,7 +107,6 @@ async def select_day(callback: types.CallbackQuery):
     )
     await callback.answer()
 
-# Шаг 3. После выбора времени — запрос данных пользователя
 @dp.callback_query(F.data.startswith("select_time:"))
 async def select_time(callback: types.CallbackQuery):
     selected_time = callback.data.split(":", 1)[1]
@@ -123,7 +116,6 @@ async def select_time(callback: types.CallbackQuery):
     user_context[user_id]["time"] = selected_time
 
     async def handle_entry(message: types.Message):
-        dp.message.unregister(handle_entry, F.from_user.id == user_id)
         data = load_data()
         try:
             parts = [s.strip() for s in message.text.split(',', 2)]
@@ -132,12 +124,10 @@ async def select_time(callback: types.CallbackQuery):
             name, surname, address = parts
             date_s = user_context[user_id]["date"]
             time_s = user_context[user_id]["time"]
-            # Проверка лимита записей в неделю
             count = len(get_user_week_records(data["schedule"], user_id))
             if count >= 2:
                 await message.answer("❌ За одну неделю нельзя записаться более 2 раз.")
                 return
-            # Проверка занятости слота
             for item in data["schedule"]:
                 if item["date"] == date_s and item["time"] == time_s and item.get("status") != "отменено":
                     await message.answer("❌ Этот слот уже занят. Выберите другое время.")
@@ -154,12 +144,11 @@ async def select_time(callback: types.CallbackQuery):
             await message.answer("✅ Запись добавлена!")
         except Exception:
             await message.answer("❗ Формат некорректен. Введите корректно: имя, фамилия, адрес")
+        user_context.pop(user_id, None)
 
     dp.message.register(handle_entry, F.from_user.id == user_id)
     await callback.message.answer("👤 Введите имя, фамилию и адрес через запятую (пример: Иван, Иванов, ул. Ленина 5)")
     await callback.answer()
-
-# ----------- ОТМЕНА ЗАНЯТИЯ (не менялось) ------------------
 
 @dp.message(Command("cancel"))
 async def cancel(message: types.Message):
@@ -194,7 +183,6 @@ async def cancel(message: types.Message):
     except Exception:
         await message.answer("❗ Некорректная команда. Пример: /cancel 12.10.2025 14:00 Иван Иванов")
 
-# ----------- ЗАПУСК ------------------
 async def main():
     await dp.start_polling(bot)
 
