@@ -8,6 +8,8 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.filters import Command
 from aiogram.utils.keyboard import InlineKeyboardBuilder
+from aiogram.fsm.state import StatesGroup, State
+from aiogram.fsm.context import FSMContext
 
 TOKEN = "7818982442:AAGY-DDMsuvhLg0-Ec1ds43SkAmCltR88cI"
 DATA_FILE = "data.json"
@@ -17,6 +19,10 @@ logging.basicConfig(level=logging.INFO)
 bot = Bot(token=TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher()
 user_context = {}
+
+class Booking(StatesGroup):
+    waiting_for_name = State()
+    waiting_for_address = State()
 
 def load_data():
     try:
@@ -108,40 +114,41 @@ async def select_day(callback: types.CallbackQuery):
     await callback.answer()
 
 @dp.callback_query(F.data.startswith("select_time:"))
-async def select_time(callback: types.CallbackQuery):
+async def select_time(callback: types.CallbackQuery, state: FSMContext):
     selected_time = callback.data.split(":", 1)[1]
     user_id = callback.from_user.id
-    if user_id not in user_context:
-        user_context[user_id] = {}
+    user_context[user_id] = user_context.get(user_id, {})
     user_context[user_id]["time"] = selected_time
-
-    async def ask_address(message: types.Message):
-        name_surname = message.text.strip()
-        parts = name_surname.split()
-        if len(parts) < 2:
-            await message.answer("Пожалуйста, укажите имя и фамилию через пробел.")
-            return
-        user_context[user_id]["name"] = parts[0]
-        user_context[user_id]["surname"] = " ".join(parts[1:])
-        dp.message.register(confirm_step, F.from_user.id == user_id)
-        await message.answer("📍 Введите адрес, куда подъехать:")
-
-    async def confirm_step(message: types.Message):
-        address = message.text.strip()
-        user_context[user_id]["address"] = address
-        builder = InlineKeyboardBuilder()
-        builder.button(text="✅ Подтвердить запись", callback_data="confirm_entry")
-        await message.answer(
-            f"Имя: {user_context[user_id]['name']}\n"
-            f"Фамилия: {user_context[user_id]['surname']}\n"
-            f"Адрес: {address}\n"
-            "Нажмите кнопку ниже для подтверждения записи.",
-            reply_markup=builder.as_markup()
-        )
-
-    dp.message.register(ask_address, F.from_user.id == user_id)
     await callback.message.answer("👤 Введите имя и фамилию через пробел (например: Иван Иванов)")
+    await state.set_state(Booking.waiting_for_name)
     await callback.answer()
+
+@dp.message(Booking.waiting_for_name)
+async def process_name(message: types.Message, state: FSMContext):
+    user_id = message.from_user.id
+    parts = message.text.strip().split()
+    if len(parts) < 2:
+        await message.answer("Пожалуйста, укажите имя и фамилию через пробел.")
+        return
+    user_context[user_id]["name"] = parts[0]
+    user_context[user_id]["surname"] = " ".join(parts[1:])
+    await message.answer("📍 Введите адрес, куда подъехать:")
+    await state.set_state(Booking.waiting_for_address)
+
+@dp.message(Booking.waiting_for_address)
+async def process_address(message: types.Message, state: FSMContext):
+    user_id = message.from_user.id
+    user_context[user_id]["address"] = message.text.strip()
+    builder = InlineKeyboardBuilder()
+    builder.button(text="✅ Подтвердить запись", callback_data="confirm_entry")
+    await message.answer(
+        f"Имя: {user_context[user_id]['name']}\n"
+        f"Фамилия: {user_context[user_id]['surname']}\n"
+        f"Адрес: {user_context[user_id]['address']}\n"
+        "Нажмите кнопку ниже для подтверждения записи.",
+        reply_markup=builder.as_markup()
+    )
+    await state.clear()
 
 @dp.callback_query(F.data == "confirm_entry")
 async def confirm_entry(callback: types.CallbackQuery):
