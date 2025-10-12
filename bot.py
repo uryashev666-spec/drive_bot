@@ -15,7 +15,7 @@ logging.basicConfig(level=logging.INFO)
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
-user_context = {}  # user_id → {"date": ..., "time": ...}
+user_context = {}  # user_id -> {"date": ..., "time": ...}
 
 def load_data():
     try:
@@ -112,6 +112,7 @@ async def handle_time_selection(callback: types.CallbackQuery):
     selected_time = callback.data.split(":", 1)[1]
     if user_id not in user_context:
         await callback.message.answer("⚠️ Сначала выбери день.")
+        await callback.answer()
         return
     user_context[user_id]["time"] = selected_time
 
@@ -154,7 +155,11 @@ async def handle_time_selection(callback: types.CallbackQuery):
     await callback.answer()
 
 async def unregister_save_record(user_id):
-    dp.message.unregister_all(F.from_user.id == user_id)
+    try:
+        # снимаем все зарегистрированные обработчики сообщений для пользователя
+        dp.message.unregister_all(F.from_user.id == user_id)
+    except Exception:
+        pass
     user_context.pop(user_id, None)
 
 @dp.message(Command("cancel"))
@@ -200,6 +205,7 @@ async def view_day_records(message: types.Message):
         if len(parts) != 2:
             raise ValueError("Неверный формат")
         date_s = parts[1].strip()
+        # проверка формата даты (DD.MM.YYYY)
         datetime.strptime(date_s, "%d.%m.%Y")
 
         data = load_data()
@@ -208,4 +214,17 @@ async def view_day_records(message: types.Message):
             await message.answer(f"📭 На {date_s} записей нет.")
             return
 
-       
+        text = "\n".join([
+            f'• {item["time"]}, {item.get("name", "")} {item.get("surname", "")}, {item.get("address", "")}' +
+            (" [Отмена]" if item.get("status") == "отменено" else "")
+            for item in records
+        ])
+        await message.answer(f"📅 Записи на {date_s}:\n\n{text}")
+    except Exception:
+        await message.answer("❗ Используй формат: /day 12.10.2025")
+
+async def main():
+    await dp.start_polling(bot)
+
+if __name__ == "__main__":
+    asyncio.run(main())
