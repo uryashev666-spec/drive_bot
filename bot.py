@@ -74,8 +74,8 @@ async def view_schedule(callback: types.CallbackQuery):
         await callback.message.answer("📭 Расписание пока пустое.")
     else:
         text = "\n".join([
-            f'• {item["date"]}, {item["time"]}, {item.get("name", "")} {item.get("surname", "")}, {item.get("address", "")}' +
-            (" [Отмена]" if item.get("status") == "отменено" else "")
+            f'• {item["date"]}, {item["time"]}, {item.get("name", "")} {item.get("surname", "")}, {item.get("address", "")}'
+            + (" [Отмена]" if item.get("status") == "отменено" else "")
             for item in data["schedule"]
         ])
         await callback.message.answer(f"📅 Текущее расписание:\n\n{text}")
@@ -216,4 +216,4 @@ async def view_day_records(message: types.Message):
             return
 
         text = "\n".join([
-            f'• {item["time"]}, {item
+            f'
