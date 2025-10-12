@@ -15,7 +15,7 @@ logging.basicConfig(level=logging.INFO)
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
-user_context = {}  # user_id -> {"date": ..., "time": ...}
+user_context = {}
 
 def load_data():
     try:
@@ -74,8 +74,8 @@ async def view_schedule(callback: types.CallbackQuery):
         await callback.message.answer("📭 Расписание пока пустое.")
     else:
         text = "\n".join([
-            f'• {item["date"]}, {item["time"]}, {item.get("name", "")} {item.get("surname", "")}, {item.get("address", "")}'
-            + (" [Отмена]" if item.get("status") == "отменено" else "")
+            f'• {item["date"]}, {item["time"]}, {item.get("name", "")} {item.get("surname", "")}, {item.get("address", "")}' +
+            (" [Отмена]" if item.get("status") == "отменено" else "")
             for item in data["schedule"]
         ])
         await callback.message.answer(f"📅 Текущее расписание:\n\n{text}")
@@ -146,8 +146,6 @@ async def handle_time_selection(callback: types.CallbackQuery):
             })
             save_data(data)
             await message.answer("✅ Запись добавлена в расписание!")
-        except ValueError as ve:
-            await message.answer(f"❗ {ve}")
         except Exception:
             await message.answer("❗ Формат некорректен. Попробуй ещё раз по примеру.")
 
@@ -159,7 +157,7 @@ async def unregister_save_record(user_id):
     try:
         dp.message.unregister_all(F.from_user.id == user_id)
     except Exception:
-        logging.exception("Ошибка при снятии обработчиков сообщений")
+        logging.exception("Ошибка при снятии обработчиков")
     user_context.pop(user_id, None)
 
 @dp.message(Command("cancel"))
@@ -172,33 +170,23 @@ async def cancel(message: types.Message):
         _, date_s, time_s, name, surname = parts
         found = None
         for item in data["schedule"]:
-            if (
-                item["date"] == date_s and
-                item["time"] == time_s and
-                item["name"] == name and
-                item["surname"] == surname
-            ):
+            if item["date"] == date_s and item["time"] == time_s and item["name"] == name and item["surname"] == surname:
                 found = item
                 break
         if not found:
             await message.answer("❌ Запись не найдена.")
             return
         user_id = found.get("user_id")
-        if user_id is not None:
+        if user_id:
             try:
-                await bot.send_message(
-                    user_id,
-                    "⚠️ Занятие отменено инструктором в связи с технической необходимостью."
-                )
+                await bot.send_message(user_id, "⚠️ Занятие отменено инструктором.")
             except Exception:
-                logging.exception(f"Не удалось отправить сообщение пользователю {user_id}")
+                logging.exception("Не удалось отправить сообщение")
         found["status"] = "отменено"
         save_data(data)
-        await message.answer("⛔ Сообщение об отмене отправлено ученику. Слот останется занятым.")
-    except ValueError as ve:
-        await message.answer(f"❗ {ve}")
+        await message.answer("⛔ Запись отменена.")
     except Exception:
-        await message.answer("❗ Некорректная команда. Пример: /cancel 12.10.2025 14:00 Иван Иванов")
+        await message.answer("❗ Пример: /cancel 12.10.2025 14:00 Иван Иванов")
 
 @dp.message(Command("day"))
 async def view_day_records(message: types.Message):
@@ -207,7 +195,7 @@ async def view_day_records(message: types.Message):
         if len(parts) != 2:
             raise ValueError("Неверный формат")
         date_s = parts[1].strip()
-        datetime.strptime(date_s, "%d.%m.%Y")  # проверка формата
+        datetime.strptime(date_s, "%d.%m.%Y")
 
         data = load_data()
         records = [item for item in data["schedule"] if item["date"] == date_s]
@@ -216,19 +204,5 @@ async def view_day_records(message: types.Message):
             return
 
         text = "\n".join([
-            f'• {item["time"]}, {item.get("name", "")} {item.get("surname", "")}, {item.get("address", "")}'
-            + (" [Отмена]" if item.get("status") == "отменено" else "")
-            for item in records
-        ])
-        await message.answer(f"📅 Записи на {date_s}:\n\n{text}")
-    except ValueError:
-        await message.answer("❗ Используй формат: /day 12.10.2025")
-    except Exception as e:
-        logging.error(f"Ошибка в /day: {e}")
-        await message.answer("❗ Произошла ошибка при получении записей.")
-
-async def main():
-    await dp.start_polling(bot)
-
-if __name__ == "__main__":
-    asyncio.run(main())
+            f'• {item["time"]}, {item.get("name", "")} {item.get("surname", "")}, {item.get("address", "")}' +
+            (" [
