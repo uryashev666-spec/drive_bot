@@ -15,7 +15,7 @@ logging.basicConfig(level=logging.INFO)
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
-user_message_handlers = {}
+user_context = {}  # user_id → {"date": ..., "time": ...}
 
 def load_data():
     try:
@@ -42,26 +42,15 @@ def get_user_week_records(schedule, user_id):
     return result
 
 def get_next_weekdays(count=10):
+    weekdays_ru = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница"]
     days = []
     current = date.today() + timedelta(days=1)
     while len(days) < count:
-        if current.weekday() < 5:  # Пн–Пт
-            days.append(current.strftime("%d.%m.%Y"))
+        if current.weekday() < 5:
+            day_name = weekdays_ru[current.weekday()]
+            days.append(f"{day_name}, {current.strftime('%d.%m.%Y')}")
         current += timedelta(days=1)
     return days
-
-def get_save_record_handler(user_id):
-    if user_id not in user_message_handlers:
-        async def specific_save_record(message: types.Message):
-            await save_record_logic(message, user_id)
-        user_message_handlers[user_id] = specific_save_record
-    return user_message_handlers[user_id]
-
-async def unregister_save_record(user_id):
-    handler = user_message_handlers.get(user_id)
-    if handler:
-        dp.message.unregister(handler, F.from_user.id == user_id)
-        del user_message_handlers[user_id]
 
 @dp.message(Command("start"))
 async def start(message: types.Message):
@@ -99,6 +88,7 @@ async def add_record(callback: types.CallbackQuery):
     keyboard = InlineKeyboardBuilder()
     for day in days:
         keyboard.button(text=day, callback_data=f"select_day:{day}")
+    keyboard.adjust(1)
     await callback.message.answer("📅 Выбери день для записи:", reply_markup=keyboard.as_markup())
     await callback.answer()
 
@@ -106,43 +96,66 @@ async def add_record(callback: types.CallbackQuery):
 async def handle_day_selection(callback: types.CallbackQuery):
     user_id = callback.from_user.id
     selected_day = callback.data.split(":", 1)[1]
+    user_context[user_id] = {"date": selected_day}
 
-    async def wrapped_handler(message: types.Message):
-        message.text = f"{selected_day}, {message.text}"
-        await save_record_logic(message, user_id)
-
-    user_message_handlers[user_id] = wrapped_handler
-    dp.message.register(wrapped_handler, F.from_user.id == user_id)
-
-    await callback.message.answer(
-        f"🕒 Введи время, имя, фамилию и адрес (пример: 14:00, Иван, Иванов, ул. Ленина 5)"
-    )
+    times = ["8:00", "9:20", "10:40", "12:50", "14:10", "15:30"]
+    keyboard = InlineKeyboardBuilder()
+    for t in times:
+        keyboard.button(text=t, callback_data=f"select_time:{t}")
+    keyboard.adjust(2)
+    await callback.message.answer(f"🕒 Выбран день: {selected_day}\nТеперь выбери время:", reply_markup=keyboard.as_markup())
     await callback.answer()
 
-async def save_record_logic(message: types.Message, user_id):
-    await unregister_save_record(user_id)
-    data = load_data()
-    try:
-        parts = [s.strip() for s in message.text.split(',', 5)]
-        if len(parts) != 5:
-            raise ValueError("Недостаточно данных")
-        date_s, time_s, name, surname, address = parts
-        count = len(get_user_week_records(data["schedule"], user_id))
-        if count >= 2:
-            await message.answer("❌ За одну неделю нельзя записаться более 2 раз.")
-            return
-        data["schedule"].append({
-            "date": date_s,
-            "time": time_s,
-            "name": name,
-            "surname": surname,
-            "address": address,
-            "user_id": user_id
-        })
-        save_data(data)
-        await message.answer("✅ Запись добавлена в расписание!")
-    except Exception:
-        await message.answer("❗ Формат некорректен. Попробуй ещё раз по примеру.")
+@dp.callback_query(F.data.startswith("select_time:"))
+async def handle_time_selection(callback: types.CallbackQuery):
+    user_id = callback.from_user.id
+    selected_time = callback.data.split(":", 1)[1]
+    if user_id not in user_context:
+        await callback.message.answer("⚠️ Сначала выбери день.")
+        return
+    user_context[user_id]["time"] = selected_time
+
+    async def final_step(message: types.Message):
+        await unregister_save_record(user_id)
+        data = load_data()
+        try:
+            parts = [s.strip() for s in message.text.split(',', 2)]
+            if len(parts) != 3:
+                raise ValueError("Недостаточно данных")
+            name, surname, address = parts
+            date_s = user_context[user_id]["date"].split(", ")[1]
+            time_s = user_context[user_id]["time"]
+
+            count = len(get_user_week_records(data["schedule"], user_id))
+            if count >= 2:
+                await message.answer("❌ За одну неделю нельзя записаться более 2 раз.")
+                return
+
+            for item in data["schedule"]:
+                if item["date"] == date_s and item["time"] == time_s and item.get("status") != "отменено":
+                    await message.answer("❌ Этот слот уже занят. Выбери другое время.")
+                    return
+
+            data["schedule"].append({
+                "date": date_s,
+                "time": time_s,
+                "name": name,
+                "surname": surname,
+                "address": address,
+                "user_id": user_id
+            })
+            save_data(data)
+            await message.answer("✅ Запись добавлена в расписание!")
+        except Exception:
+            await message.answer("❗ Формат некорректен. Попробуй ещё раз по примеру.")
+
+    dp.message.register(final_step, F.from_user.id == user_id)
+    await callback.message.answer("👤 Введи имя, фамилию и адрес (пример: Иван, Иванов, ул. Ленина 5)")
+    await callback.answer()
+
+async def unregister_save_record(user_id):
+    dp.message.unregister_all(F.from_user.id == user_id)
+    user_context.pop(user_id, None)
 
 @dp.message(Command("cancel"))
 async def cancel(message: types.Message):
@@ -180,8 +193,19 @@ async def cancel(message: types.Message):
     except Exception:
         await message.answer("❗ Некорректная команда. Пример: /cancel 12.10.2025 14:00 Иван Иванов")
 
-async def main():
-    await dp.start_polling(bot)
+@dp.message(Command("day"))
+async def view_day_records(message: types.Message):
+    try:
+        parts = message.text.split(" ", 1)
+        if len(parts) != 2:
+            raise ValueError("Неверный формат")
+        date_s = parts[1].strip()
+        datetime.strptime(date_s, "%d.%m.%Y")
 
-if __name__ == "__main__":
-    asyncio.run(main())
+        data = load_data()
+        records = [item for item in data["schedule"] if item["date"] == date_s]
+        if not records:
+            await message.answer(f"📭 На {date_s} записей нет.")
+            return
+
+       
