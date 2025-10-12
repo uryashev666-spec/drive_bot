@@ -74,15 +74,12 @@ async def view_schedule(callback: types.CallbackQuery):
     if not data["schedule"]:
         await callback.message.answer("📭 Расписание пока пустое.")
     else:
-        text = "
-".join([
+        text = "\n".join([
             f'• {item["date"]}, {item["time"]}, {item.get("name", "")} {item.get("surname", "")}, {item.get("address", "")}' +
             (" [Отмена]" if item.get("status") == "отменено" else "")
             for item in data["schedule"]
         ])
-        await callback.message.answer(f"📅 Текущее расписание:
-
-{text}")
+        await callback.message.answer(f"📅 Текущее расписание:\n\n{text}")
     await callback.answer()
 
 @dp.callback_query(F.data == "add_record")
