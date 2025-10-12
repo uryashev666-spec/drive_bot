@@ -212,4 +212,23 @@ async def view_day_records(message: types.Message):
         data = load_data()
         records = [item for item in data["schedule"] if item["date"] == date_s]
         if not records:
-           
+            await message.answer(f"📭 На {date_s} записей нет.")
+            return
+
+        text = "\n".join([
+            f'• {item["time"]}, {item.get("name", "")} {item.get("surname", "")}, {item.get("address", "")}'
+            + (" [Отмена]" if item.get("status") == "отменено" else "")
+            for item in records
+        ])
+        await message.answer(f"📅 Записи на {date_s}:\n\n{text}")
+    except ValueError:
+        await message.answer("❗ Используй формат: /day 12.10.2025")
+    except Exception as e:
+        logging.error(f"Ошибка в /day: {e}")
+        await message.answer("❗ Произошла ошибка при получении записей.")
+
+async def main():
+    await dp.start_polling(bot)
+
+if __name__ == "__main__":
+    asyncio.run(main())
