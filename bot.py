@@ -156,7 +156,6 @@ async def handle_time_selection(callback: types.CallbackQuery):
     await callback.answer()
 
 async def unregister_save_record(user_id):
-    # безопасно снимаем все зарегистрированные обработчики сообщений для пользователя
     try:
         dp.message.unregister_all(F.from_user.id == user_id)
     except Exception:
@@ -208,8 +207,7 @@ async def view_day_records(message: types.Message):
         if len(parts) != 2:
             raise ValueError("Неверный формат")
         date_s = parts[1].strip()
-        # проверка формата даты (DD.MM.YYYY)
-        datetime.strptime(date_s, "%d.%m.%Y")
+        datetime.strptime(date_s, "%d.%m.%Y")  # проверка формата
 
         data = load_data()
         records = [item for item in data["schedule"] if item["date"] == date_s]
@@ -218,18 +216,4 @@ async def view_day_records(message: types.Message):
             return
 
         text = "\n".join([
-            f'• {item["time"]}, {item.get("name", "")} {item.get("surname", "")}, {item.get("address", "")}' +
-            (" [Отмена]" if item.get("status") == "отменено" else "")
-            for item in records
-        ])
-        await message.answer(f"📅 Записи на {date_s}:\n\n{text}")
-    except ValueError:
-        await message.answer("❗ Используй формат: /day 12.10.2025")
-    except Exception:
-        await message.answer("❗ Произошла ошибка при получении записей. Попробуй ещё раз.")
-
-async def main():
-    await dp.start_polling(bot)
-
-if __name__ == "__main__":
-    asyncio.run(main())
+            f'• {item["time"]}, {item
