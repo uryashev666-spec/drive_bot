@@ -212,8 +212,4 @@ async def view_day_records(message: types.Message):
         data = load_data()
         records = [item for item in data["schedule"] if item["date"] == date_s]
         if not records:
-            await message.answer(f"📭 На {date_s} записей нет.")
-            return
-
-        text = "\n".join([
-            f'
+           
