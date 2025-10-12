@@ -39,4 +39,149 @@ def get_user_week_records(schedule, user_id):
                     result.append(item)
             except Exception:
                 pass
-    return
+    return result
+
+def get_next_weekdays(count=10):
+    days = []
+    current = date.today() + timedelta(days=1)
+    while len(days) < count:
+        if current.weekday() < 5:  # Пн–Пт
+            days.append(current.strftime("%d.%m.%Y"))
+        current += timedelta(days=1)
+    return days
+
+def get_save_record_handler(user_id):
+    if user_id not in user_message_handlers:
+        async def specific_save_record(message: types.Message):
+            await save_record_logic(message, user_id)
+        user_message_handlers[user_id] = specific_save_record
+    return user_message_handlers[user_id]
+
+async def unregister_save_record(user_id):
+    handler = user_message_handlers.get(user_id)
+    if handler:
+        dp.message.unregister(handler, F.from_user.id == user_id)
+        del user_message_handlers[user_id]
+
+@dp.message(Command("start"))
+async def start(message: types.Message):
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="📅 Расписание", callback_data="view_schedule")],
+            [InlineKeyboardButton(text="✏️ Записаться", callback_data="add_record")],
+            [InlineKeyboardButton(text="💬 Написать инструктору", url=TELEGRAM_LINK)]
+        ]
+    )
+    await message.answer(
+        "👋 Привет! Я бот автоинструктора. Здесь ты можешь посмотреть расписание и записаться на занятие.",
+        reply_markup=keyboard,
+        parse_mode=ParseMode.HTML
+    )
+
+@dp.callback_query(F.data == "view_schedule")
+async def view_schedule(callback: types.CallbackQuery):
+    data = load_data()
+    if not data["schedule"]:
+        await callback.message.answer("📭 Расписание пока пустое.")
+    else:
+        text = "\n".join([
+            f'• {item["date"]}, {item["time"]}, {item.get("name", "")} {item.get("surname", "")}, {item.get("address", "")}' +
+            (" [Отмена]" if item.get("status") == "отменено" else "")
+            for item in data["schedule"]
+        ])
+        await callback.message.answer(f"📅 Текущее расписание:\n\n{text}")
+    await callback.answer()
+
+@dp.callback_query(F.data == "add_record")
+async def add_record(callback: types.CallbackQuery):
+    user_id = callback.from_user.id
+    days = get_next_weekdays(10)
+    keyboard = InlineKeyboardBuilder()
+    for day in days:
+        keyboard.button(text=day, callback_data=f"select_day:{day}")
+    await callback.message.answer("📅 Выбери день для записи:", reply_markup=keyboard.as_markup())
+    await callback.answer()
+
+@dp.callback_query(F.data.startswith("select_day:"))
+async def handle_day_selection(callback: types.CallbackQuery):
+    user_id = callback.from_user.id
+    selected_day = callback.data.split(":", 1)[1]
+
+    async def wrapped_handler(message: types.Message):
+        message.text = f"{selected_day}, {message.text}"
+        await save_record_logic(message, user_id)
+
+    user_message_handlers[user_id] = wrapped_handler
+    dp.message.register(wrapped_handler, F.from_user.id == user_id)
+
+    await callback.message.answer(
+        f"🕒 Введи время, имя, фамилию и адрес (пример: 14:00, Иван, Иванов, ул. Ленина 5)"
+    )
+    await callback.answer()
+
+async def save_record_logic(message: types.Message, user_id):
+    await unregister_save_record(user_id)
+    data = load_data()
+    try:
+        parts = [s.strip() for s in message.text.split(',', 5)]
+        if len(parts) != 5:
+            raise ValueError("Недостаточно данных")
+        date_s, time_s, name, surname, address = parts
+        count = len(get_user_week_records(data["schedule"], user_id))
+        if count >= 2:
+            await message.answer("❌ За одну неделю нельзя записаться более 2 раз.")
+            return
+        data["schedule"].append({
+            "date": date_s,
+            "time": time_s,
+            "name": name,
+            "surname": surname,
+            "address": address,
+            "user_id": user_id
+        })
+        save_data(data)
+        await message.answer("✅ Запись добавлена в расписание!")
+    except Exception:
+        await message.answer("❗ Формат некорректен. Попробуй ещё раз по примеру.")
+
+@dp.message(Command("cancel"))
+async def cancel(message: types.Message):
+    data = load_data()
+    try:
+        parts = message.text.split(' ', 4)
+        if len(parts) != 5:
+            raise ValueError("Некорректное количество аргументов")
+        _, date_s, time_s, name, surname = parts
+        found = None
+        for item in data["schedule"]:
+            if (
+                item["date"] == date_s and
+                item["time"] == time_s and
+                item["name"] == name and
+                item["surname"] == surname
+            ):
+                found = item
+                break
+        if not found:
+            await message.answer("❌ Запись не найдена.")
+            return
+        user_id = found.get("user_id")
+        if user_id is not None:
+            try:
+                await bot.send_message(
+                    user_id,
+                    "⚠️ Занятие отменено инструктором в связи с технической необходимостью."
+                )
+            except Exception as e:
+                logging.error(f"Could not send cancellation message to user {user_id}: {e}")
+        found["status"] = "отменено"
+        save_data(data)
+        await message.answer("⛔ Сообщение об отмене отправлено ученику. Слот останется занятым.")
+    except Exception:
+        await message.answer("❗ Некорректная команда. Пример: /cancel 12.10.2025 14:00 Иван Иванов")
+
+async def main():
+    await dp.start_polling(bot)
+
+if __name__ == "__main__":
+    asyncio.run(main())
