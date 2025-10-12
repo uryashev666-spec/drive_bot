@@ -83,7 +83,6 @@ async def view_schedule(callback: types.CallbackQuery):
 
 @dp.callback_query(F.data == "add_record")
 async def add_record(callback: types.CallbackQuery):
-    user_id = callback.from_user.id
     days = get_next_weekdays(10)
     keyboard = InlineKeyboardBuilder()
     for day in days:
@@ -156,7 +155,6 @@ async def handle_time_selection(callback: types.CallbackQuery):
 
 async def unregister_save_record(user_id):
     try:
-        # снимаем все зарегистрированные обработчики сообщений для пользователя
         dp.message.unregister_all(F.from_user.id == user_id)
     except Exception:
         pass
