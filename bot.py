@@ -232,7 +232,91 @@ async def process_address(message: types.Message, state: FSMContext):
     )
     await state.clear()
 
-# --- Остальная логика (confirm_entry, user_cancel, админ панель и т.д.) без изменений ---
+# ВОТ ОБЯЗАТЕЛЬНО!!
+@dp.callback_query(F.data == "confirm_entry")
+async def confirm_entry(callback: types.CallbackQuery):
+    user_id = callback.from_user.id
+    user_data = user_context.get(user_id)
+    data = load_data()
+    if not user_data:
+        await callback.message.answer("Ошибка, попробуйте выбрать день заново.")
+        await callback.answer()
+        return
+
+    date_s = user_data["date"]
+    time_s = user_data["time"]
+    name = user_data["name"]
+    surname = user_data["surname"]
+    address = user_data["address"]
+    count = len(get_user_week_records(data["schedule"], user_id))
+
+    if count >= 3:
+        await callback.message.answer("❌ За одну неделю нельзя записаться более 3 раз.")
+        await callback.answer()
+        return
+    for item in data["schedule"]:
+        if item["date"] == date_s and item["time"] == time_s and item.get("status") != "отменено":
+            await callback.message.answer("❌ Этот слот уже занят.")
+            await callback.answer()
+            return
+
+    data["schedule"].append({
+        "date": date_s,
+        "time": time_s,
+        "name": name,
+        "surname": surname,
+        "address": address,
+        "user_id": user_id
+    })
+    save_data(data)
+
+    card_text = (
+        f"🟢 Новая запись!\n\n"
+        f"Фамилия: {surname}\n"
+        f"Имя: {name}\n"
+        f"Адрес: {address}\n"
+        f"Дата: {date_s}\n"
+        f"Время: {time_s}"
+    )
+    await bot.send_message(YOUR_TELEGRAM_ID, card_text)
+    msg_user = (
+        f"✅ Вы записаны на занятие!\n"
+        f"Дата: {date_s}\n"
+        f"Время: {time_s}\n"
+        f"Адрес: {address}"
+    )
+    await bot.send_message(user_id, msg_user)
+    asyncio.create_task(remind_later(user_id, date_s, time_s, address))
+    user_context.pop(user_id, None)
+    await callback.answer()
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="📅 Расписание", callback_data="view_schedule")],
+            [InlineKeyboardButton(text="✏️ Записаться", callback_data="add_record")],
+            [InlineKeyboardButton(text="💬 Написать инструктору", url=TELEGRAM_LINK)]
+        ]
+    )
+    await callback.message.answer("✅ Запись подтверждена! Вы возвращены в главное меню.", reply_markup=keyboard)
+
+async def remind_later(user_id, date_s, time_s, address):
+    dt = datetime.strptime(f"{date_s} {time_s}", "%d.%m.%Y %H:%M")
+    delay = (dt - timedelta(minutes=20) - datetime.now()).total_seconds()
+    if delay > 0:
+        await asyncio.sleep(delay)
+        msg = (
+            f"⏰ Напоминание!\n"
+            f"Занятие через 20 минут.\n"
+            f"Дата: {date_s}\n"
+            f"Время: {time_s}\n"
+            f"Адрес: {address}"
+        )
+        try:
+            await bot.send_message(user_id, msg)
+        except Exception:
+            pass
+
+# ... остальные функции отмены, админ-панель и т.д. ...
 
 async def main():
     await dp.start_polling(bot)
