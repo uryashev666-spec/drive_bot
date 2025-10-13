@@ -92,6 +92,7 @@ async def view_schedule(callback: types.CallbackQuery):
         and item.get("status") != "отменено"
         and datetime.strptime(f"{item['date']} {item['time']}", "%d.%m.%Y %H:%M") > now
     ]
+    # Сортировать по дате и времени!
     my_records.sort(key=lambda item: datetime.strptime(f"{item['date']} {item['time']}", "%d.%m.%Y %H:%M"))
 
     other_records = [
@@ -100,7 +101,6 @@ async def view_schedule(callback: types.CallbackQuery):
         and item.get("status") != "отменено"
         and datetime.strptime(f"{item['date']} {item['time']}", "%d.%m.%Y %H:%M") > now
     ]
-    # other_records сортируются при необходимости
 
     text = ""
     builder = InlineKeyboardBuilder()
