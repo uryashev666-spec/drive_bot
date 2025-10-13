@@ -1,15 +1,12 @@
 import asyncio
 import json
 import logging
-from datetime import datetime, date, timedelta
+from datetime import datetime, timedelta
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.enums import ParseMode
 from aiogram.client.default import DefaultBotProperties
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.filters import Command
-from aiogram.utils.keyboard import InlineKeyboardBuilder
-from aiogram.fsm.state import StatesGroup, State
-from aiogram.fsm.context import FSMContext
 
 TOKEN = "7818982442:AAGY-DDMsuvhLg0-Ec1ds43SkAmCltR88cI"
 DATA_FILE = "data.json"
@@ -19,13 +16,7 @@ YOUR_TELEGRAM_ID = 487289287
 logging.basicConfig(level=logging.INFO)
 bot = Bot(token=TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher()
-user_context = {}
-all_users = set()
-students = {}
-
-class Booking(StatesGroup):
-    waiting_for_name = State()
-    waiting_for_address = State()
+user_message_handlers = {}
 
 def load_data():
     try:
@@ -39,35 +30,33 @@ def save_data(data):
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 def get_user_week_records(schedule, user_id):
+    result = []
     now = datetime.now()
-    return [
-        item for item in schedule if item.get("user_id") == user_id
-            and 0 <= (now - datetime.strptime(item.get("date"), "%d.%m.%Y")).days < 7
-    ]
+    for item in schedule:
+        if item.get("user_id") == user_id:
+            try:
+                date = datetime.strptime(item.get("date"), "%d.%m.%Y")
+                if 0 <= (now - date).days < 7:
+                    result.append(item)
+            except Exception:
+                pass
+    return result
 
-def get_workdays(count=10):
-    weekdays_ru = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница"]
-    now = datetime.now()
-    today = date.today()
-    days = []
-    current = today
-    skip_today = (now.hour > 15) or (now.hour == 15 and now.minute >= 20)
-    added = 0
-    while added < count:
-        if current.weekday() < 5:
-            if skip_today and current == today:
-                current += timedelta(days=1)
-                skip_today = False
-                continue
-            day_name = weekdays_ru[current.weekday()]
-            days.append((day_name, current.strftime("%d.%m.%Y")))
-            added += 1
-        current += timedelta(days=1)
-    return days
+def get_save_record_handler(user_id):
+    if user_id not in user_message_handlers:
+        async def specific_save_record(message: types.Message):
+            await save_record_logic(message, user_id)
+        user_message_handlers[user_id] = specific_save_record
+    return user_message_handlers[user_id]
+
+async def unregister_save_record(user_id):
+    handler = user_message_handlers.get(user_id)
+    if handler:
+        dp.message.unregister(handler, F.from_user.id == user_id)
+        del user_message_handlers[user_id]
 
 @dp.message(Command("start"))
 async def start(message: types.Message):
-    all_users.add(message.from_user.id)
     buttons = [
         [InlineKeyboardButton(text="📅 Расписание", callback_data="view_schedule")],
         [InlineKeyboardButton(text="✏️ Записаться", callback_data="add_record")],
@@ -86,12 +75,11 @@ async def admin_panel_button(callback: types.CallbackQuery):
     await admin_panel(callback.message)
     await callback.answer()
 
-@dp.message(Command('admin'))
+@dp.message(Command("admin"))
 async def admin_panel(message: types.Message):
     if message.from_user.id != YOUR_TELEGRAM_ID:
         await message.answer('⛔ Только для администратора!')
         return
-
     data = load_data()
     now = datetime.now()
     all_records = [
@@ -100,7 +88,6 @@ async def admin_panel(message: types.Message):
         and datetime.strptime(f"{item['date']} {item['time']}", "%d.%m.%Y %H:%M") > now
     ]
     all_records.sort(key=lambda item: datetime.strptime(f"{item['date']} {item['time']}", "%d.%m.%Y %H:%M"))
-
     text = "👑 <b>Админ-панель</b>\n"
     builder = InlineKeyboardBuilder()
     for idx, item in enumerate(all_records):
@@ -124,8 +111,8 @@ async def admin_cancel(callback: types.CallbackQuery):
         return
     _, date_s, time_s, target_id = callback.data.split(":", 3)
     data = load_data()
-    found = next((item for item in data["schedule"] if
-                  item["date"]==date_s and item["time"]==time_s and str(item["user_id"])==str(target_id) and item.get("status")!="отменено"), None)
+    found = next((item for item in data["schedule"]
+                  if item["date"]==date_s and item["time"]==time_s and str(item["user_id"])==str(target_id) and item.get("status")!="отменено"), None)
     if not found:
         await callback.message.answer("Запись не найдена.")
         await callback.answer()
@@ -140,8 +127,90 @@ async def admin_cancel(callback: types.CallbackQuery):
         pass
     await callback.answer()
 
-# Остальной пользовательский код (view_schedule, запись, отмена, сортировка, ограничения, подтверждение и т.д.)
-# не требует изменений — вставьте сюда весь ваш рабочий код, как ранее!
+@dp.callback_query(F.data == "view_schedule")
+async def view_schedule(callback: types.CallbackQuery):
+    data = load_data()
+    if not data["schedule"]:
+        await callback.message.answer("📭 Расписание пока пустое.")
+    else:
+        text = "\n".join([
+            f'• {item["date"]}, {item["time"]}, {item.get("name", "")} {item.get("surname", "")}, {item.get("address", "")}' 
+            + (" [Отмена]" if item.get("status") == "отменено" else "")
+            for item in data["schedule"]
+        ])
+        await callback.message.answer(f"📅 Текущее расписание:\n\n{text}")
+    await callback.answer()
+
+@dp.callback_query(F.data == "add_record")
+async def add_record(callback: types.CallbackQuery):
+    user_id = callback.from_user.id
+    handler = get_save_record_handler(user_id)
+    dp.message.register(handler, F.from_user.id == user_id)
+    await callback.message.answer(
+        "✏️ Введи дату, время, имя, фамилию и адрес (пример: 12.10.2025, 14:00, Иван, Иванов, ул. Ленина 5):"
+    )
+    await callback.answer()
+
+async def save_record_logic(message: types.Message, user_id):
+    await unregister_save_record(user_id)
+    data = load_data()
+    try:
+        parts = [s.strip() for s in message.text.split(',', 4)]
+        if len(parts) != 5:
+            raise ValueError("Недостаточно данных")
+        date_s, time_s, name, surname, address = parts
+        count = len(get_user_week_records(data["schedule"], user_id))
+        if count >= 2:
+            await message.answer("❌ За одну неделю нельзя записаться более 2 раз.")
+            return
+        data["schedule"].append({
+            "date": date_s,
+            "time": time_s,
+            "name": name,
+            "surname": surname,
+            "address": address,
+            "user_id": user_id
+        })
+        save_data(data)
+        await message.answer("✅ Запись добавлена в расписание!")
+    except Exception:
+        await message.answer("❗ Формат некорректен. Попробуй ещё раз по примеру.")
+
+@dp.message(Command("cancel"))
+async def cancel(message: types.Message):
+    data = load_data()
+    try:
+        parts = message.text.split(' ', 4)
+        if len(parts) != 5:
+            raise ValueError("Некорректное количество аргументов")
+        _, date_s, time_s, name, surname = parts
+        found = None
+        for item in data["schedule"]:
+            if (
+                item["date"] == date_s
+                and item["time"] == time_s
+                and item["name"] == name
+                and item["surname"] == surname
+            ):
+                found = item
+                break
+        if not found:
+            await message.answer("❌ Запись не найдена.")
+            return
+        user_id = found.get("user_id")
+        if user_id is not None:
+            try:
+                await bot.send_message(
+                    user_id,
+                    "⚠️ Занятие отменено инструктором в связи с технической необходимостью."
+                )
+            except Exception as e:
+                logging.error(f"Could not send cancellation message to user {user_id}: {e}")
+        found["status"] = "отменено"
+        save_data(data)
+        await message.answer("⛔ Сообщение об отмене отправлено ученику. Слот останется занятым.")
+    except Exception:
+        await message.answer("❗ Некорректная команда. Пример: /cancel 12.10.2025 14:00 Иван Иванов")
 
 async def main():
     await dp.start_polling(bot)
