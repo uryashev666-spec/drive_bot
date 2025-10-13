@@ -149,22 +149,41 @@ async def cancel_my_record(callback: types.CallbackQuery):
 async def add_record(callback: types.CallbackQuery):
     days = get_workdays(10)
     data = load_data()
+    user_id = callback.from_user.id
     times_list = ["8:00", "9:20", "10:40", "12:50", "14:10", "15:30"]
     builder = InlineKeyboardBuilder()
     for day_name, d in days:
-        busy_count = 0
-        for t in times_list:
-            busy = any(
-                item["date"] == d and item["time"] == t and item.get("status") != "отменено"
-                for item in data["schedule"])
-            if busy:
-                busy_count += 1
-        if busy_count == len(times_list):
-            builder.button(text=f"❌ {day_name}, {d}", callback_data="busy_day")
+        # Проверка, записан ли уже этот пользователь на этот день:
+        user_has_record_today = any(
+            item["user_id"] == user_id and item["date"] == d and item.get("status") != "отменено"
+            for item in data["schedule"]
+        )
+        if user_has_record_today:
+            builder.button(text=f"🚫 {day_name}, {d} (у вас есть запись)", callback_data="user_busy_day")
         else:
-            builder.button(text=f"{day_name}, {d}", callback_data=f"select_day:{d}")
+            busy_count = 0
+            for t in times_list:
+                busy = any(
+                    item["date"] == d and item["time"] == t and item.get("status") != "отменено"
+                    for item in data["schedule"])
+                if busy:
+                    busy_count += 1
+            if busy_count == len(times_list):
+                builder.button(text=f"❌ {day_name}, {d}", callback_data="busy_day")
+            else:
+                builder.button(text=f"{day_name}, {d}", callback_data=f"select_day:{d}")
     builder.adjust(1)
     await callback.message.answer("📅 Выберите день занятия:", reply_markup=builder.as_markup())
+    await callback.answer()
+
+@dp.callback_query(F.data == "user_busy_day")
+async def user_busy_day(callback: types.CallbackQuery):
+    await callback.message.answer("❌ На этот день вы уже записаны! Отмените свою запись в расписании, если хотите изменить время.")
+    await callback.answer()
+
+@dp.callback_query(F.data == "busy_day")
+async def busy_day(callback: types.CallbackQuery):
+    await callback.message.answer("❌ В этот день все слоты заняты.")
     await callback.answer()
 
 @dp.callback_query(F.data.startswith("select_day:"))
@@ -208,6 +227,11 @@ async def select_time(callback: types.CallbackQuery, state: FSMContext):
     else:
         await callback.message.answer("👤 Введите ВАШИ фамилию и имя через пробел (например: Иванов Иван)")
         await state.set_state(Booking.waiting_for_name)
+    await callback.answer()
+
+@dp.callback_query(F.data == "busy")
+async def busy(callback: types.CallbackQuery):
+    await callback.message.answer("❌ Это время уже занято.")
     await callback.answer()
 
 @dp.message(Booking.waiting_for_name)
@@ -272,16 +296,13 @@ async def confirm_entry(callback: types.CallbackQuery):
     # ----- ОГРАНИЧЕНИЕ: только одна запись на день -----
     already_today = [
         item for item in data["schedule"]
-        if item["user_id"] == user_id
-        and item["date"] == date_s
-        and item.get("status") != "отменено"
+        if item["user_id"] == user_id and item["date"] == date_s and item.get("status") != "отменено"
     ]
     if already_today:
         await callback.message.answer("❌ В этот день у вас уже есть запись! Можно только одну запись на день.")
         await callback.answer()
         return
 
-    # Ограничение: не больше 3-х за неделю
     if count >= 3:
         await callback.message.answer("❌ За одну неделю нельзя записаться более 3 раз.")
         await callback.answer()
@@ -348,7 +369,7 @@ async def remind_later(user_id, date_s, time_s, address):
         except Exception:
             pass
 
-# ... остальные функции отмены, админ-панель и т.д ...
+# Остальные функции отмены, админ-панель и т.д.
 
 async def main():
     await dp.start_polling(bot)
