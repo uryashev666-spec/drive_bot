@@ -92,12 +92,15 @@ async def view_schedule(callback: types.CallbackQuery):
         and item.get("status") != "отменено"
         and datetime.strptime(f"{item['date']} {item['time']}", "%d.%m.%Y %H:%M") > now
     ]
+    my_records.sort(key=lambda item: datetime.strptime(f"{item['date']} {item['time']}", "%d.%m.%Y %H:%M"))
+
     other_records = [
         item for item in data["schedule"]
         if item.get("user_id") != user_id
         and item.get("status") != "отменено"
         and datetime.strptime(f"{item['date']} {item['time']}", "%d.%m.%Y %H:%M") > now
     ]
+    # other_records сортируются при необходимости
 
     text = ""
     builder = InlineKeyboardBuilder()
@@ -153,7 +156,6 @@ async def add_record(callback: types.CallbackQuery):
     times_list = ["8:00", "9:20", "10:40", "12:50", "14:10", "15:30"]
     builder = InlineKeyboardBuilder()
     for day_name, d in days:
-        # Проверка, записан ли уже этот пользователь на этот день:
         user_has_record_today = any(
             item["user_id"] == user_id and item["date"] == d and item.get("status") != "отменено"
             for item in data["schedule"]
@@ -218,7 +220,6 @@ async def select_time(callback: types.CallbackQuery, state: FSMContext):
     if user_id not in user_context:
         user_context[user_id] = {}
     user_context[user_id]["time"] = selected_time
-    # если ученик уже записывался — не спрашиваем ФИО, только адрес
     if user_id in students:
         user_context[user_id]["surname"] = students[user_id]["surname"]
         user_context[user_id]["name"] = students[user_id]["name"]
@@ -243,7 +244,6 @@ async def process_name(message: types.Message, state: FSMContext):
         return
     user_context[user_id]["name"] = parts[1]
     user_context[user_id]["surname"] = parts[0]
-    # сохраняем!
     students[user_id] = {
         "surname": parts[0],
         "name": parts[1]
@@ -293,7 +293,6 @@ async def confirm_entry(callback: types.CallbackQuery):
     address = user_data["address"]
     count = len(get_user_week_records(data["schedule"], user_id))
 
-    # ----- ОГРАНИЧЕНИЕ: только одна запись на день -----
     already_today = [
         item for item in data["schedule"]
         if item["user_id"] == user_id and item["date"] == date_s and item.get("status") != "отменено"
@@ -307,6 +306,7 @@ async def confirm_entry(callback: types.CallbackQuery):
         await callback.message.answer("❌ За одну неделю нельзя записаться более 3 раз.")
         await callback.answer()
         return
+
     for item in data["schedule"]:
         if item["date"] == date_s and item["time"] == time_s and item.get("status") != "отменено":
             await callback.message.answer("❌ Этот слот уже занят.")
@@ -369,7 +369,7 @@ async def remind_later(user_id, date_s, time_s, address):
         except Exception:
             pass
 
-# Остальные функции отмены, админ-панель и т.д.
+# ... остальные функции отмены, админ-панель и т.д. ...
 
 async def main():
     await dp.start_polling(bot)
