@@ -21,6 +21,7 @@ bot = Bot(token=TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher()
 user_context = {}
 all_users = set()
+students = {}  # user_id: {"surname": ..., "name": ...}
 
 class Booking(StatesGroup):
     waiting_for_name = State()
@@ -196,8 +197,15 @@ async def select_time(callback: types.CallbackQuery, state: FSMContext):
     user_id = callback.from_user.id
     user_context[user_id] = user_context.get(user_id, {})
     user_context[user_id]["time"] = selected_time
-    await callback.message.answer("👤 Введите ВАШИ фамилию и имя через пробел (например: Иванов Иван)")
-    await state.set_state(Booking.waiting_for_name)
+    # если ученик уже записывался — не спрашиваем ФИО, только адрес
+    if user_id in students:
+        user_context[user_id]["surname"] = students[user_id]["surname"]
+        user_context[user_id]["name"] = students[user_id]["name"]
+        await callback.message.answer("📍 Введите адрес, куда подъехать:")
+        await state.set_state(Booking.waiting_for_address)
+    else:
+        await callback.message.answer("👤 Введите ВАШИ фамилию и имя через пробел (например: Иванов Иван)")
+        await state.set_state(Booking.waiting_for_name)
     await callback.answer()
 
 @dp.message(Booking.waiting_for_name)
@@ -209,6 +217,11 @@ async def process_name(message: types.Message, state: FSMContext):
         return
     user_context[user_id]["name"] = parts[1]
     user_context[user_id]["surname"] = parts[0]
+    # сохраняем!
+    students[user_id] = {
+        "surname": parts[0],
+        "name": parts[1]
+    }
     await message.answer("📍 Введите адрес, куда подъехать:")
     await state.set_state(Booking.waiting_for_address)
 
@@ -232,7 +245,6 @@ async def process_address(message: types.Message, state: FSMContext):
     )
     await state.clear()
 
-# ВОТ ОБЯЗАТЕЛЬНО!!
 @dp.callback_query(F.data == "confirm_entry")
 async def confirm_entry(callback: types.CallbackQuery):
     user_id = callback.from_user.id
@@ -316,7 +328,7 @@ async def remind_later(user_id, date_s, time_s, address):
         except Exception:
             pass
 
-# ... остальные функции отмены, админ-панель и т.д. ...
+# Остальные функции отмены, админ-панель и т.д. - без изменений
 
 async def main():
     await dp.start_polling(bot)
