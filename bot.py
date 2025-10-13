@@ -83,8 +83,20 @@ async def start(message: types.Message):
 async def view_schedule(callback: types.CallbackQuery):
     data = load_data()
     user_id = callback.from_user.id
-    my_records = [item for item in data["schedule"] if item.get("user_id")==user_id and item.get("status")!="отменено"]
-    other_records = [item for item in data["schedule"] if item.get("user_id")!=user_id and item.get("status")!="отменено"]
+    now = datetime.now()
+
+    my_records = [
+        item for item in data["schedule"]
+        if item.get("user_id") == user_id
+        and item.get("status") != "отменено"
+        and datetime.strptime(f"{item['date']} {item['time']}", "%d.%m.%Y %H:%M") > now
+    ]
+    other_records = [
+        item for item in data["schedule"]
+        if item.get("user_id") != user_id
+        and item.get("status") != "отменено"
+        and datetime.strptime(f"{item['date']} {item['time']}", "%d.%m.%Y %H:%M") > now
+    ]
 
     text = ""
     builder = InlineKeyboardBuilder()
@@ -220,7 +232,7 @@ async def process_address(message: types.Message, state: FSMContext):
     )
     await state.clear()
 
-# ... далее все функции и админ-панель без изменений ...
+# --- Остальная логика (confirm_entry, user_cancel, админ панель и т.д.) без изменений ---
 
 async def main():
     await dp.start_polling(bot)
