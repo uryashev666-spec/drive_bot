@@ -171,8 +171,9 @@ async def add_record(callback: types.CallbackQuery):
 async def select_day(callback: types.CallbackQuery):
     selected_date = callback.data.split(":", 1)[1]
     user_id = callback.from_user.id
-    all_users.add(user_id)
-    user_context[user_id] = {"date": selected_date}
+    if user_id not in user_context:
+        user_context[user_id] = {}
+    user_context[user_id]["date"] = selected_date
     times_list = ["8:00", "9:20", "10:40", "12:50", "14:10", "15:30"]
     data = load_data()
     builder = InlineKeyboardBuilder()
@@ -195,7 +196,8 @@ async def select_day(callback: types.CallbackQuery):
 async def select_time(callback: types.CallbackQuery, state: FSMContext):
     selected_time = callback.data.split(":", 1)[1]
     user_id = callback.from_user.id
-    user_context[user_id] = user_context.get(user_id, {})
+    if user_id not in user_context:
+        user_context[user_id] = {}
     user_context[user_id]["time"] = selected_time
     # если ученик уже записывался — не спрашиваем ФИО, только адрес
     if user_id in students:
@@ -228,8 +230,14 @@ async def process_name(message: types.Message, state: FSMContext):
 @dp.message(Booking.waiting_for_address)
 async def process_address(message: types.Message, state: FSMContext):
     user_id = message.from_user.id
-    user_context[user_id]["address"] = message.text.strip()
+    if user_id not in user_context:
+        user_context[user_id] = {}
     uc = user_context[user_id]
+    uc["address"] = message.text.strip()
+    # Проверка/заполнение ключей по безопасности (если вдруг)
+    for key in ("date", "time", "surname", "name"):
+        if key not in uc:
+            uc[key] = ""
     builder = InlineKeyboardBuilder()
     builder.button(text="✅ Подтвердить запись", callback_data="confirm_entry")
     builder.button(text="❌ Отменить занятие", callback_data="user_cancel")
@@ -328,7 +336,7 @@ async def remind_later(user_id, date_s, time_s, address):
         except Exception:
             pass
 
-# Остальные функции отмены, админ-панель и т.д. - без изменений
+# ... остальные функции отмены, админ-панель и т.д ...
 
 async def main():
     await dp.start_polling(bot)
