@@ -11,16 +11,17 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.fsm.context import FSMContext
 
-TOKEN = "ВАШ_ТОКЕН"
+TOKEN = "7818982442:AAGY-DDMsuvhLg0-Ec1ds43SkAmCltR88cI"
 DATA_FILE = "data.json"
 TELEGRAM_LINK = "https://t.me/sv010ch"
-YOUR_TELEGRAM_ID = 487289287  # ваш id
+YOUR_TELEGRAM_ID = 487289287
 
 logging.basicConfig(level=logging.INFO)
 bot = Bot(token=TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher()
 user_context = {}
 all_users = set()
+
 
 class Booking(StatesGroup):
     waiting_for_name = State()
@@ -54,6 +55,7 @@ def get_workdays(count=10):
             days.append((day_name, current.strftime("%d.%m.%Y")))
         current += timedelta(days=1)
     return days
+
 
 @dp.message(Command("start"))
 async def start(message: types.Message):
@@ -108,7 +110,7 @@ async def select_day(callback: types.CallbackQuery):
             item["date"] == selected_date and item["time"] == t and item.get("status") != "отменено"
             for item in data["schedule"])
         if busy:
-            builder.button(text=f"❌ {t}", callback_data="busy")
+            builder.button(text=f"❌ {t}", callback_data="busy")  # неактивно
         else:
             builder.button(text=t, callback_data=f"select_time:{t}")
     builder.adjust(3)
@@ -234,7 +236,6 @@ async def confirm_entry(callback: types.CallbackQuery):
     user_context.pop(user_id, None)
     await callback.answer()
 
-    # Главное меню для пользователя
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="📅 Расписание", callback_data="view_schedule")],
@@ -244,7 +245,6 @@ async def confirm_entry(callback: types.CallbackQuery):
     )
     await callback.message.answer("✅ Запись подтверждена! Вы возвращены в главное меню.", reply_markup=keyboard)
 
-# Самостоятельная отмена ученика с рассылкой другим
 @dp.callback_query(F.data == "user_cancel")
 async def user_cancel(callback: types.CallbackQuery):
     user_id = callback.from_user.id
@@ -279,7 +279,6 @@ async def user_cancel(callback: types.CallbackQuery):
                 pass
     await callback.answer()
 
-# Admin-panel, отмены через Telegram
 @dp.message(Command("admin"))
 async def admin_panel(message: types.Message):
     if message.from_user.id != YOUR_TELEGRAM_ID:
@@ -363,7 +362,7 @@ async def admin_cancel_time_n(callback: types.CallbackQuery):
             await bot.send_message(uid, f"⛔ Ваше занятие {date_s} {time_s} отменено администратором.")
         except Exception: pass
     save_data(data)
-    await callback.message.answer("Слот отменён, уведомление только отменяемому ученику, запись в это время невозможна.")
+    await callback.message.answer("Слот отменён, уведомление только отменяемому ученику, запись для остальных невозможна.")
     await callback.answer()
 
 async def main():
