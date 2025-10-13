@@ -234,7 +234,6 @@ async def process_address(message: types.Message, state: FSMContext):
         user_context[user_id] = {}
     uc = user_context[user_id]
     uc["address"] = message.text.strip()
-    # Проверка/заполнение ключей по безопасности (если вдруг)
     for key in ("date", "time", "surname", "name"):
         if key not in uc:
             uc[key] = ""
@@ -270,6 +269,19 @@ async def confirm_entry(callback: types.CallbackQuery):
     address = user_data["address"]
     count = len(get_user_week_records(data["schedule"], user_id))
 
+    # ----- ОГРАНИЧЕНИЕ: только одна запись на день -----
+    already_today = [
+        item for item in data["schedule"]
+        if item["user_id"] == user_id
+        and item["date"] == date_s
+        and item.get("status") != "отменено"
+    ]
+    if already_today:
+        await callback.message.answer("❌ В этот день у вас уже есть запись! Можно только одну запись на день.")
+        await callback.answer()
+        return
+
+    # Ограничение: не больше 3-х за неделю
     if count >= 3:
         await callback.message.answer("❌ За одну неделю нельзя записаться более 3 раз.")
         await callback.answer()
