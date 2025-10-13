@@ -50,12 +50,10 @@ def get_workdays(count=10):
     today = date.today()
     days = []
     current = today
-    # После 15:20 сегодня не показывать!
     skip_today = (now.hour > 15) or (now.hour == 15 and now.minute >= 20)
     added = 0
     while added < count:
         if current.weekday() < 5:
-            # если это сегодня и нужно пропустить — продолжаем
             if skip_today and current == today:
                 current += timedelta(days=1)
                 skip_today = False
@@ -84,15 +82,54 @@ async def start(message: types.Message):
 @dp.callback_query(F.data == "view_schedule")
 async def view_schedule(callback: types.CallbackQuery):
     data = load_data()
-    if not data["schedule"]:
-        await callback.message.answer("📭 Расписание пока пустое.")
-    else:
-        text = "\n".join([
-            f'• {item["date"]}, {item["time"]}, {item.get("name", "")} {item.get("surname", "")}, {item.get("address", "")}'
-            + (" [Отмена]" if item.get("status") == "отменено" else "")
-            for item in data["schedule"]
-        ])
-        await callback.message.answer(f"📅 Текущее расписание:\n\n{text}")
+    user_id = callback.from_user.id
+    my_records = [item for item in data["schedule"] if item.get("user_id")==user_id and item.get("status")!="отменено"]
+    other_records = [item for item in data["schedule"] if item.get("user_id")!=user_id and item.get("status")!="отменено"]
+
+    text = ""
+    builder = InlineKeyboardBuilder()
+    for idx, item in enumerate(my_records):
+        text += f"🟢 Моя запись {idx+1}:\nДата: {item['date']}\nВремя: {item['time']}\nАдрес: {item['address']}\n"
+        builder.button(text=f"❌ Отменить {item['date']} {item['time']}", callback_data=f"cancel_my_record:{item['date']}:{item['time']}")
+    if other_records:
+        text += "\n🟡 Другие записи:\n" + "\n".join(
+            f"• {item['date']}, {item['time']}, {item.get('name','')} {item.get('surname','')}, {item.get('address','')}"
+            for item in other_records
+        )
+    builder.adjust(1)
+    await callback.message.answer(text or "Нет записей.", reply_markup=builder.as_markup())
+    await callback.answer()
+
+@dp.callback_query(F.data.startswith("cancel_my_record:"))
+async def cancel_my_record(callback: types.CallbackQuery):
+    user_id = callback.from_user.id
+    _, date_s, time_s = callback.data.split(":")
+    data = load_data()
+    now = datetime.now()
+    dt_slot = datetime.strptime(f"{date_s} {time_s}", "%d.%m.%Y %H:%M")
+    hours_left = (dt_slot - now).total_seconds() / 3600
+    found = next((item for item in data["schedule"] if
+                  item["date"]==date_s and item["time"]==time_s and item["user_id"]==user_id and item.get("status")!="отменено"), None)
+    if not found:
+        await callback.message.answer("Запись не найдена.")
+        await callback.answer()
+        return
+    if hours_left < 12:
+        await callback.message.answer("Отменить запись через бота поздно (меньше 12 часов). Свяжитесь с инструктором!")
+        await callback.answer()
+        return
+    found["status"] = "отменено"
+    save_data(data)
+    await callback.message.answer(f"✅ Запись {date_s} {time_s} отменена! Другим пользователям отправлено уведомление о свободном времени.")
+    for uid in all_users:
+        if uid != user_id:
+            try:
+                await bot.send_message(
+                    uid,
+                    f"🔔 Освободилось время занятий!\nДата: {date_s}\nВремя: {time_s}\nМожно записаться!"
+                )
+            except Exception:
+                pass
     await callback.answer()
 
 @dp.callback_query(F.data == "add_record")
@@ -104,14 +141,14 @@ async def add_record(callback: types.CallbackQuery):
     for day_name, d in days:
         busy_count = 0
         for t in times_list:
-            busy = any(item["date"] == d and item["time"] == t and item.get("status") != "отменено" for item in data["schedule"])
+            busy = any(
+                item["date"] == d and item["time"] == t and item.get("status") != "отменено"
+                for item in data["schedule"])
             if busy:
                 busy_count += 1
         if busy_count == len(times_list):
-            # Все слоты заняты — неактивный день
             builder.button(text=f"❌ {day_name}, {d}", callback_data="busy_day")
         else:
-            # Есть свободное время — обычная кнопка дня
             builder.button(text=f"{day_name}, {d}", callback_data=f"select_day:{d}")
     builder.adjust(1)
     await callback.message.answer("📅 Выберите день занятия:", reply_markup=builder.as_markup())
