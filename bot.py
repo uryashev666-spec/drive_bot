@@ -21,7 +21,7 @@ bot = Bot(token=TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher()
 user_context = {}
 all_users = set()
-students = {}  # user_id: {"surname": ..., "name": ...}
+students = {}
 
 class Booking(StatesGroup):
     waiting_for_name = State()
@@ -73,7 +73,6 @@ async def start(message: types.Message):
         [InlineKeyboardButton(text="✏️ Записаться", callback_data="add_record")],
         [InlineKeyboardButton(text="💬 Написать инструктору", url=TELEGRAM_LINK)]
     ]
-    # Только для админа добавить кнопку!
     if message.from_user.id == YOUR_TELEGRAM_ID:
         buttons.insert(0, [InlineKeyboardButton(text="🛡 Админ-панель", callback_data="admin_panel")])
     keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
@@ -117,7 +116,6 @@ async def admin_panel(message: types.Message):
     builder.adjust(1)
     await message.answer(text, reply_markup=builder.as_markup())
 
-
 @dp.callback_query(F.data.startswith("admin_cancel:"))
 async def admin_cancel(callback: types.CallbackQuery):
     if callback.from_user.id != YOUR_TELEGRAM_ID:
@@ -142,6 +140,11 @@ async def admin_cancel(callback: types.CallbackQuery):
         pass
     await callback.answer()
 
-# ...дальше код пользователя, ограничения, подтверждение записи и т.д...
-# (оставьте весь остальной обработчик расписания, add_record, select_day, select_time, confirm_entry и другие ровно как раньше —
-# в этой части ничего менять не нужно)
+# Остальной пользовательский код (view_schedule, запись, отмена, сортировка, ограничения, подтверждение и т.д.)
+# не требует изменений — вставьте сюда весь ваш рабочий код, как ранее!
+
+async def main():
+    await dp.start_polling(bot)
+
+if __name__ == "__main__":
+    asyncio.run(main())
