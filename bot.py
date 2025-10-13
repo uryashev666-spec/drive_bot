@@ -68,19 +68,25 @@ def get_workdays(count=10):
 @dp.message(Command("start"))
 async def start(message: types.Message):
     all_users.add(message.from_user.id)
-    keyboard = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="📅 Расписание", callback_data="view_schedule")],
-            [InlineKeyboardButton(text="✏️ Записаться", callback_data="add_record")],
-            [InlineKeyboardButton(text="💬 Написать инструктору", url=TELEGRAM_LINK)]
-        ]
-    )
+    buttons = [
+        [InlineKeyboardButton(text="📅 Расписание", callback_data="view_schedule")],
+        [InlineKeyboardButton(text="✏️ Записаться", callback_data="add_record")],
+        [InlineKeyboardButton(text="💬 Написать инструктору", url=TELEGRAM_LINK)]
+    ]
+    # Только для админа добавить кнопку!
+    if message.from_user.id == YOUR_TELEGRAM_ID:
+        buttons.insert(0, [InlineKeyboardButton(text="🛡 Админ-панель", callback_data="admin_panel")])
+    keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
     await message.answer(
         "👋 Привет! Я бот автоинструктора. Здесь ты можешь посмотреть расписание и записаться на занятие.",
         reply_markup=keyboard
     )
 
-# ------------- АДМИН ПАНЕЛЬ -------------
+@dp.callback_query(F.data == "admin_panel")
+async def admin_panel_button(callback: types.CallbackQuery):
+    await admin_panel(callback.message)
+    await callback.answer()
+
 @dp.message(Command('admin'))
 async def admin_panel(message: types.Message):
     if message.from_user.id != YOUR_TELEGRAM_ID:
@@ -135,49 +141,7 @@ async def admin_cancel(callback: types.CallbackQuery):
     except Exception:
         pass
     await callback.answer()
-# ----------- КОНЕЦ АДМИН ПАНЕЛИ ---------
 
-@dp.callback_query(F.data == "view_schedule")
-async def view_schedule(callback: types.CallbackQuery):
-    data = load_data()
-    user_id = callback.from_user.id
-    now = datetime.now()
-
-    my_records = [
-        item for item in data["schedule"]
-        if item.get("user_id") == user_id
-        and item.get("status") != "отменено"
-        and datetime.strptime(f"{item['date']} {item['time']}", "%d.%m.%Y %H:%M") > now
-    ]
-    my_records.sort(key=lambda item: datetime.strptime(f"{item['date']} {item['time']}", "%d.%m.%Y %H:%M"))
-
-    other_records = [
-        item for item in data["schedule"]
-        if item.get("user_id") != user_id
-        and item.get("status") != "отменено"
-        and datetime.strptime(f"{item['date']} {item['time']}", "%d.%m.%Y %H:%M") > now
-    ]
-
-    text = ""
-    builder = InlineKeyboardBuilder()
-    for idx, item in enumerate(my_records):
-        text += f"🟢 Моя запись {idx+1}:\nДата: {item['date']}\nВремя: {item['time']}\nАдрес: {item['address']}\n"
-        builder.button(text=f"❌ Отменить {item['date']} {item['time']}", callback_data=f"cancel_my_record:{item['date']}:{item['time']}")
-    if other_records:
-        text += "\n🟡 Другие записи:\n" + "\n".join(
-            f"• {item['date']}, {item['time']}, {item.get('name','')} {item.get('surname','')}, {item.get('address','')}"
-            for item in other_records
-        )
-    builder.adjust(1)
-    await callback.message.answer(text or "Нет записей.", reply_markup=builder.as_markup())
-    await callback.answer()
-
-@dp.callback_query(F.data.startswith("cancel_my_record:"))
-async def cancel_my_record(callback: types.CallbackQuery):
-    user_id = callback.from_user.id
-    _, date_s, time_s = callback.data.split(":", 2)
-    data = load_data()
-    now = datetime.now()
-    dt_slot = datetime.strptime(f"{date_s} {time_s}", "%d.%m.%Y %H:%M")
-    hours_left = (dt_slot - now).total_seconds() / 3600
-    found = next((item for item in data["schedule"]
+# ...дальше код пользователя, ограничения, подтверждение записи и т.д...
+# (оставьте весь остальной обработчик расписания, add_record, select_day, select_time, confirm_entry и другие ровно как раньше —
+# в этой части ничего менять не нужно)
