@@ -44,6 +44,18 @@ def get_workdays(count=10):
 def get_times():
     return ["08:00", "09:20", "10:40", "12:50", "14:10", "15:30"]
 
+def safe_datetime(date_s, time_s):
+    try:
+        return datetime.strptime(f"{date_s} {time_s}", "%d.%m.%Y %H:%M")
+    except Exception:
+        # Пробуем подправить ошибочное время, например "09" → "09:00"
+        if len(time_s) == 2 and time_s.isdigit():
+            try:
+                return datetime.strptime(f"{date_s} {time_s}:00", "%d.%m.%Y %H:%M")
+            except Exception:
+                return None
+        return None
+
 @dp.message(Command("start"))
 async def start(message: types.Message):
     buttons = [
@@ -56,7 +68,6 @@ async def start(message: types.Message):
     keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
     await message.answer("👋 Привет! Я бот автоинструктора. Можешь посмотреть расписание и записаться на занятие.", reply_markup=keyboard)
 
-# ------ Кнопочный сценарий записи --------
 @dp.callback_query(F.data == "add_record")
 async def add_record(callback: types.CallbackQuery):
     user_id = callback.from_user.id
@@ -104,6 +115,10 @@ async def busy_time(callback: types.CallbackQuery):
 async def select_time_write_name(callback: types.CallbackQuery):
     selected_time = callback.data.split(":")[1]
     user_id = callback.from_user.id
+    # Защита: только разрешенные времена
+    if selected_time not in get_times():
+        await callback.message.answer("Ошибка: некорректное время. Обновите меню!")
+        return
     user_context[user_id]["time"] = selected_time
     await callback.message.answer("👤 Введите фамилию и имя через пробел (например: Иванов Иван)")
     await callback.answer()
@@ -123,6 +138,10 @@ async def process_name_or_address(message: types.Message):
         return
     if ctx.get("date") and ctx.get("time") and ctx.get("name") and "address" not in ctx:
         ctx["address"] = message.text.strip()
+        # Проверка времени!
+        if ctx["time"] not in get_times():
+            await message.answer("Ошибка! Время должно быть строго из списка.")
+            return
         data = load_data()
         data["schedule"].append({
             "date": ctx["date"],
@@ -145,9 +164,9 @@ async def view_schedule(callback: types.CallbackQuery):
     my_records = [
         item for item in data["schedule"]
         if item.get("user_id") == my_id and item.get("status") != "отменено"
-           and datetime.strptime(f"{item['date']} {item['time']}", "%d.%m.%Y %H:%M") > now
+           and safe_datetime(item['date'], item['time']) and safe_datetime(item['date'], item['time']) > now
     ]
-    my_records.sort(key=lambda item: datetime.strptime(f"{item['date']} {item['time']}", "%d.%m.%Y %H:%M"))
+    my_records.sort(key=lambda item: safe_datetime(item['date'], item['time']) or datetime.max)
     text = ""
     for idx, item in enumerate(my_records):
         text += f"🟢 Моя запись {idx+1}:\nДата: {item['date']}\nВремя: {item['time']}\nАдрес: {item['address']}\n"
@@ -156,7 +175,6 @@ async def view_schedule(callback: types.CallbackQuery):
     await callback.message.answer(text)
     await callback.answer()
 
-# --------- АДМИНСКАЯ ПАНЕЛЬ (отмена дней, слотов, рассылки) -----------
 @dp.callback_query(F.data == "admin_panel")
 async def admin_panel(callback: types.CallbackQuery):
     if callback.from_user.id != YOUR_TELEGRAM_ID:
@@ -165,7 +183,11 @@ async def admin_panel(callback: types.CallbackQuery):
         return
     data = load_data()
     now = datetime.now()
-    upcoming_days = sorted(set(item["date"] for item in data["schedule"] if datetime.strptime(f"{item['date']} {item['time']}", "%d.%m.%Y %H:%M") > now))
+    upcoming_days = sorted(set(
+        item["date"]
+        for item in data["schedule"]
+        if safe_datetime(item["date"], item["time"]) and safe_datetime(item["date"], item["time"]) > now
+    ))
     builder = InlineKeyboardBuilder()
     text = "<b>Управление занятиями:</b>\n\n"
     for day in upcoming_days:
