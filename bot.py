@@ -48,7 +48,6 @@ def safe_datetime(date_s, time_s):
     try:
         return datetime.strptime(f"{date_s} {time_s}", "%d.%m.%Y %H:%M")
     except Exception:
-        # Попытка исправить ошибочное время ('09' → '09:00')
         if len(time_s) == 2 and time_s.isdigit():
             try:
                 return datetime.strptime(f"{date_s} {time_s}:00", "%d.%m.%Y %H:%M")
@@ -113,7 +112,8 @@ async def busy_time(callback: types.CallbackQuery):
 
 @dp.callback_query(F.data.startswith("select_time:"))
 async def select_time_write_name(callback: types.CallbackQuery):
-    selected_time = callback.data.split(":")[1].strip()   # добавлено .strip()
+    # Исправлено — теперь всегда корректное время
+    selected_time = callback.data[len('select_time:'):].strip()
     user_id = callback.from_user.id
     if selected_time not in get_times():
         await callback.message.answer("Ошибка: некорректное время. Обновите меню!")
@@ -137,7 +137,6 @@ async def process_name_or_address(message: types.Message):
         return
     if ctx.get("date") and ctx.get("time") and ctx.get("name") and "address" not in ctx:
         ctx["address"] = message.text.strip()
-        # Проверка времени!
         if ctx["time"].strip() not in get_times():
             await message.answer("Ошибка! Время должно быть строго из списка.")
             return
