@@ -18,6 +18,7 @@ logging.basicConfig(level=logging.INFO)
 bot = Bot(token=TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher()
 user_context = {}
+users_info = {}  # user_id: dict(surname=..., name=...)
 
 def load_data():
     try:
@@ -122,19 +123,31 @@ async def select_time_write_name(callback: types.CallbackQuery):
         await callback.message.answer("Ошибка: некорректное время. Обновите меню!")
         return
     user_context[user_id]["time"] = selected_time
-    await callback.message.answer("👤 Введите фамилию и имя через пробел (например: Иванов Иван)")
+    # Если пользователь уже записывался — спрашиваем только адрес:
+    if user_id in users_info:
+        await callback.message.answer("📍 Введите адрес, куда подъехать:")
+    else:
+        await callback.message.answer("👤 Введите фамилию и имя через пробел (например: Иванов Иван)")
     await callback.answer()
 
 @dp.message()
 async def process_name_or_address(message: types.Message):
     user_id = message.from_user.id
     ctx = user_context.get(user_id, {})
+    # Если нет фамилии/имени — спросить только 1 раз, потом подставлять автоматически
     if ctx.get("date") and ctx.get("time") and "name" not in ctx:
+        if user_id in users_info:
+            ctx["surname"] = users_info[user_id]["surname"]
+            ctx["name"] = users_info[user_id]["name"]
+            user_context[user_id] = ctx
+            await message.answer("📍 Введите адрес, куда подъехать:")
+            return
         parts = message.text.strip().split(" ", 1)
         if len(parts) < 2:
             await message.answer("Пожалуйста, напишите фамилию и имя через пробел.")
             return
         ctx["surname"], ctx["name"] = parts[0], parts[1]
+        users_info[user_id] = {"surname": ctx["surname"], "name": ctx["name"]}
         user_context[user_id] = ctx
         await message.answer("📍 Введите адрес, куда подъехать:")
         return
@@ -169,11 +182,44 @@ async def view_schedule(callback: types.CallbackQuery):
     ]
     my_records.sort(key=lambda item: safe_datetime(item['date'], item['time']) or datetime.max)
     text = ""
+    builder = InlineKeyboardBuilder()
     for idx, item in enumerate(my_records):
         text += f"🟢 Моя запись {idx+1}:\nДата: {item['date']}\nВремя: {item['time']}\nАдрес: {item['address']}\n"
+        builder.button(
+            text=f"❌ Отменить {item['date']} {item['time']}",
+            callback_data=f"user_cancel:{item['date']}:{item['time']}"
+        )
     if not text:
         text = "У вас нет записей на ближайшее время."
-    await callback.message.answer(text)
+    builder.adjust(1)
+    await callback.message.answer(text, reply_markup=builder.as_markup())
+    await callback.answer()
+
+@dp.callback_query(F.data.startswith("user_cancel:"))
+async def user_cancel(callback: types.CallbackQuery):
+    user_id = callback.from_user.id
+    _, date_s, time_s = callback.data.split(":")
+    data = load_data()
+    found = next((item for item in data["schedule"] if
+                  item["date"]==date_s and item["time"]==time_s and item.get("user_id")==user_id and item.get("status")!="отменено"), None)
+    if not found:
+        await callback.message.answer("Запись не найдена.")
+        await callback.answer()
+        return
+    found["status"] = "отменено"
+    save_data(data)
+    await callback.message.answer(f"✅ Ваша запись {date_s} {time_s} отменена! Все получат уведомление о свободном времени.")
+    # Рассылаем всем уведомление
+    all_users = set(item["user_id"] for item in data["schedule"]) | {user_id}
+    for uid in all_users:
+        if uid != user_id:
+            try:
+                await bot.send_message(
+                    uid,
+                    f"🔔 Освободилось время занятий!\nДата: {date_s}\nВремя: {time_s}\nМожете записаться!"
+                )
+            except Exception:
+                pass
     await callback.answer()
 
 @dp.callback_query(F.data == "admin_panel")
