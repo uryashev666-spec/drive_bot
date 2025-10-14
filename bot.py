@@ -112,7 +112,6 @@ async def busy_time(callback: types.CallbackQuery):
 
 @dp.callback_query(F.data.startswith("select_time:"))
 async def select_time_write_name(callback: types.CallbackQuery):
-    # Исправлено — теперь всегда корректное время
     selected_time = callback.data[len('select_time:'):].strip()
     user_id = callback.from_user.id
     if selected_time not in get_times():
@@ -215,7 +214,15 @@ async def admin_slots(callback: types.CallbackQuery):
 
 @dp.callback_query(F.data.startswith("admin_cancel_slot:"))
 async def admin_cancel_slot(callback: types.CallbackQuery):
-    _, day, slot_time, cancel_id, cancel_type = callback.data.split(":")
+    # Универсальный разбор (работает и с двоеточием во времени)
+    prefix = "admin_cancel_slot:"
+    rest = callback.data[len(prefix):]
+    # rest = '21.10.2025:10:40:123456:free'
+    parts = rest.rsplit(":", 2)  # ['21.10.2025:10:40', '123456', 'free']
+    day_time = parts[0]
+    cancel_id = parts[1]
+    cancel_type = parts[2]
+    day, slot_time = day_time.split(":", 1)
     slot_time = slot_time.strip()
     data = load_data()
     slot = next((item for item in data["schedule"] if item["date"] == day and item["time"].strip() == slot_time and str(item["user_id"]) == cancel_id and item.get("status") != "отменено"), None)
