@@ -48,7 +48,7 @@ def safe_datetime(date_s, time_s):
     try:
         return datetime.strptime(f"{date_s} {time_s}", "%d.%m.%Y %H:%M")
     except Exception:
-        # Пробуем подправить ошибочное время, например "09" → "09:00"
+        # Попытка исправить ошибочное время ('09' → '09:00')
         if len(time_s) == 2 and time_s.isdigit():
             try:
                 return datetime.strptime(f"{date_s} {time_s}:00", "%d.%m.%Y %H:%M")
@@ -113,9 +113,8 @@ async def busy_time(callback: types.CallbackQuery):
 
 @dp.callback_query(F.data.startswith("select_time:"))
 async def select_time_write_name(callback: types.CallbackQuery):
-    selected_time = callback.data.split(":")[1]
+    selected_time = callback.data.split(":")[1].strip()   # добавлено .strip()
     user_id = callback.from_user.id
-    # Защита: только разрешенные времена
     if selected_time not in get_times():
         await callback.message.answer("Ошибка: некорректное время. Обновите меню!")
         return
@@ -139,20 +138,20 @@ async def process_name_or_address(message: types.Message):
     if ctx.get("date") and ctx.get("time") and ctx.get("name") and "address" not in ctx:
         ctx["address"] = message.text.strip()
         # Проверка времени!
-        if ctx["time"] not in get_times():
+        if ctx["time"].strip() not in get_times():
             await message.answer("Ошибка! Время должно быть строго из списка.")
             return
         data = load_data()
         data["schedule"].append({
             "date": ctx["date"],
-            "time": ctx["time"],
+            "time": ctx["time"].strip(),
             "name": ctx["name"],
             "surname": ctx["surname"],
             "address": ctx["address"],
             "user_id": user_id
         })
         save_data(data)
-        await message.answer(f"✅ Запись сохранена: {ctx['date']} {ctx['time']} {ctx['surname']} {ctx['name']}, {ctx['address']}")
+        await message.answer(f"✅ Запись сохранена: {ctx['date']} {ctx['time'].strip()} {ctx['surname']} {ctx['name']}, {ctx['address']}")
         user_context.pop(user_id, None)
         return
 
@@ -218,8 +217,9 @@ async def admin_slots(callback: types.CallbackQuery):
 @dp.callback_query(F.data.startswith("admin_cancel_slot:"))
 async def admin_cancel_slot(callback: types.CallbackQuery):
     _, day, slot_time, cancel_id, cancel_type = callback.data.split(":")
+    slot_time = slot_time.strip()
     data = load_data()
-    slot = next((item for item in data["schedule"] if item["date"] == day and item["time"] == slot_time and str(item["user_id"]) == cancel_id and item.get("status") != "отменено"), None)
+    slot = next((item for item in data["schedule"] if item["date"] == day and item["time"].strip() == slot_time and str(item["user_id"]) == cancel_id and item.get("status") != "отменено"), None)
     if not slot:
         await callback.message.answer("Слот не найден.")
         await callback.answer()
