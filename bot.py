@@ -92,6 +92,8 @@ async def user_busy_day(callback: types.CallbackQuery):
 async def select_time(callback: types.CallbackQuery):
     day_date = callback.data.split(":")[1]
     user_id = callback.from_user.id
+    if user_id not in user_context:
+        user_context[user_id] = {}
     user_context[user_id]["date"] = day_date
     data = load_data()
     builder = InlineKeyboardBuilder()
@@ -114,6 +116,8 @@ async def busy_time(callback: types.CallbackQuery):
 async def select_time_write_name(callback: types.CallbackQuery):
     selected_time = callback.data[len('select_time:'):].strip()
     user_id = callback.from_user.id
+    if user_id not in user_context:
+        user_context[user_id] = {}
     if selected_time not in get_times():
         await callback.message.answer("Ошибка: некорректное время. Обновите меню!")
         return
@@ -214,11 +218,9 @@ async def admin_slots(callback: types.CallbackQuery):
 
 @dp.callback_query(F.data.startswith("admin_cancel_slot:"))
 async def admin_cancel_slot(callback: types.CallbackQuery):
-    # Универсальный разбор (работает и с двоеточием во времени)
     prefix = "admin_cancel_slot:"
     rest = callback.data[len(prefix):]
-    # rest = '21.10.2025:10:40:123456:free'
-    parts = rest.rsplit(":", 2)  # ['21.10.2025:10:40', '123456', 'free']
+    parts = rest.rsplit(":", 2)
     day_time = parts[0]
     cancel_id = parts[1]
     cancel_type = parts[2]
