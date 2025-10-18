@@ -62,17 +62,12 @@ def safe_datetime(date_s, time_s):
     try:
         return datetime.strptime(f"{date_s} {time_s}", "%d.%m.%Y %H:%M")
     except Exception:
-        if len(time_s) == 2 and time_s.isdigit():
-            try:
-                return datetime.strptime(f"{date_s} {time_s}:00", "%d.%m.%Y %H:%M")
-            except Exception:
-                return None
         return None
 
 def week_limit(user_id, new_date):
     data = load_data()
     new_dt = datetime.strptime(new_date, "%d.%m.%Y")
-    week_dates = [(new_dt + timedelta(days=offset)).strftime("%d.%m.%Y") for offset in range(-6, 1)]
+    week_dates = [(new_dt + timedelta(days=i)).strftime("%d.%m.%Y") for i in range(-6, 1)]
     return sum(
         1 for item in data["schedule"]
         if item.get("user_id") == user_id
@@ -350,4 +345,40 @@ async def admin_cancel_day_close(callback: types.CallbackQuery):
                 )
             except Exception:
                 pass
-    save_data
+    save_data(data)
+    await callback.message.answer(f"❌ Все занятия на {day} отменены и слоты закрыты. Сообщение отправлено {cancelled} ученикам.")
+    await callback.answer()
+
+async def send_reminders():
+    while True:
+        now = datetime.now()
+        data = load_data()
+        for item in data["schedule"]:
+            if item.get("status") == "отменено":
+                continue
+            session_time = safe_datetime(item["date"], item["time"])
+            if session_time:
+                if abs((session_time - now).total_seconds() - 86400) < 60:
+                    try:
+                        await bot.send_message(
+                            item["user_id"], 
+                            f"🔔 Напоминание: занятие завтра в {item['time']} ({item['date']})"
+                        )
+                    except Exception:
+                        pass
+                if 0 < (session_time - now).total_seconds() <= 1200:
+                    try:
+                        await bot.send_message(
+                            item["user_id"], 
+                            f"⏰ Напоминание: занятие через 20 минут!"
+                        )
+                    except Exception:
+                        pass
+        await asyncio.sleep(60)
+
+async def main():
+    asyncio.create_task(send_reminders())
+    await dp.start_polling(bot)
+
+if __name__ == "__main__":
+    asyncio.run(main())
