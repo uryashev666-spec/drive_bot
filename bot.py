@@ -69,15 +69,16 @@ def safe_datetime(date_s, time_s):
                 return None
         return None
 
-def week_limit(user_id, date_str):
+def week_limit(user_id, new_date):
     data = load_data()
-    target_day = datetime.strptime(date_str, "%d.%m.%Y")
-    week_days = [(target_day + timedelta(days=i)).strftime("%d.%m.%Y") for i in range(7)]
-    count = sum(1 for item in data["schedule"]
-                if item.get("user_id") == user_id
-                and item.get("date") in week_days
-                and item.get("status") != "отменено")
-    return count
+    new_dt = datetime.strptime(new_date, "%d.%m.%Y")
+    week_dates = [(new_dt + timedelta(days=offset)).strftime("%d.%m.%Y") for offset in range(-6, 1)]
+    return sum(
+        1 for item in data["schedule"]
+        if item.get("user_id") == user_id
+        and item.get("date") in week_dates
+        and item.get("status") != "отменено"
+    )
 
 @dp.message(Command("start"))
 async def start(message: types.Message):
@@ -118,7 +119,7 @@ async def select_time(callback: types.CallbackQuery):
     user_id = callback.from_user.id
     week_count = week_limit(user_id, day_date)
     if week_count >= 2:
-        await callback.message.answer("Лимит: не более двух записей в неделю.")
+        await callback.message.answer("Лимит: не более двух занятий для ученика за любые 7 дней подряд.")
         await callback.answer()
         return
     user_context[user_id] = {"date": day_date}
@@ -195,7 +196,7 @@ async def confirm_record(callback: types.CallbackQuery):
         return
     week_count = week_limit(user_id, ctx["date"])
     if week_count >= 2:
-        await callback.message.answer("Лимит: не более двух записей в неделю.")
+        await callback.message.answer("Лимит: не более двух занятий для ученика за любые 7 дней подряд.")
         await callback.answer()
         return
     data = load_data()
@@ -274,39 +275,33 @@ async def admin_panel(callback: types.CallbackQuery):
         return
     data = load_data()
     now = datetime.now()
-    upcoming_days = sorted(set(
-        item["date"]
-        for item in data["schedule"]
-        if safe_datetime(item["date"], item["time"]) and safe_datetime(item["date"], item["time"]) > now
-    ))
-    builder = InlineKeyboardBuilder()
-    text = "<b>АДМИНИСТРАТОР: Управление занятиями</b>\n\n"
-    for day in upcoming_days:
-        builder.button(text=f"❌ Закрыть все занятия на {day}", callback_data=f"admin_cancel_day_close:{day}")
-
-    # slots отмена отдельного занятия
-    upcoming_slots = [
+    user_slots = [
         item for item in data["schedule"]
         if item.get("status") != "отменено"
            and safe_datetime(item["date"], item["time"])
            and safe_datetime(item["date"], item["time"]) > now
     ]
-    for idx, slot in enumerate(upcoming_slots, 1):
+    text = "<b>АДМИНИСТРАТОР: Управление занятиями</b>\n\n"
+    builder = InlineKeyboardBuilder()
+    for idx, slot in enumerate(user_slots, 1):
         day = slot["date"]
         time = slot["time"]
         uid = slot["user_id"]
         name = slot.get("surname", "") + " " + slot.get("name", "")
         address = slot.get("address", "")
-        text += f"\n{idx}. {day} {time} — {name}, {address}\n"
+        text += f"{idx}. {day} {time} — {name}, {address}\n"
         builder.button(
-            text=f"Освободить {day} {time}",
+            text=f"Освободить",
             callback_data=f"admin_cancel_slot:{day}:{time}:{uid}:free"
         )
         builder.button(
-            text=f"Закрыть {day} {time}",
+            text=f"Закрыть",
             callback_data=f"admin_cancel_slot:{day}:{time}:{uid}:nofree"
         )
-    builder.adjust(2)
+        builder.adjust(2)
+    upcoming_days = sorted(set(slot["date"] for slot in user_slots))
+    for day in upcoming_days:
+        builder.button(text=f"❌ Закрыть все занятия на {day}", callback_data=f"admin_cancel_day_close:{day}")
     await callback.message.answer(text, reply_markup=builder.as_markup())
     await callback.answer()
 
@@ -355,40 +350,4 @@ async def admin_cancel_day_close(callback: types.CallbackQuery):
                 )
             except Exception:
                 pass
-    save_data(data)
-    await callback.message.answer(f"❌ Все занятия на {day} отменены и слоты закрыты. Сообщение отправлено {cancelled} ученикам.")
-    await callback.answer()
-
-async def send_reminders():
-    while True:
-        now = datetime.now()
-        data = load_data()
-        for item in data["schedule"]:
-            if item.get("status") == "отменено":
-                continue
-            session_time = safe_datetime(item["date"], item["time"])
-            if session_time:
-                if abs((session_time - now).total_seconds() - 86400) < 60:
-                    try:
-                        await bot.send_message(
-                            item["user_id"], 
-                            f"🔔 Напоминание: занятие завтра в {item['time']} ({item['date']})"
-                        )
-                    except Exception:
-                        pass
-                if 0 < (session_time - now).total_seconds() <= 1200:
-                    try:
-                        await bot.send_message(
-                            item["user_id"], 
-                            f"⏰ Напоминание: занятие через 20 минут!"
-                        )
-                    except Exception:
-                        pass
-        await asyncio.sleep(60)
-
-async def main():
-    asyncio.create_task(send_reminders())
-    await dp.start_polling(bot)
-
-if __name__ == "__main__":
-    asyncio.run(main())
+    save_data
