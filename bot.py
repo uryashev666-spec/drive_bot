@@ -12,13 +12,13 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 TOKEN = "7818982442:AAGY-DDMsuvhLg0-Ec1ds43SkAmCltR88cI"
 YOUR_TELEGRAM_ID = 487289287
 DATA_FILE = "data.json"
+USERS_FILE = "users_info.json"
 TELEGRAM_LINK = "https://t.me/sv010ch"
 
 logging.basicConfig(level=logging.INFO)
 bot = Bot(token=TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher()
 user_context = {}
-users_info = {}  # user_id: dict(surname=..., name=...)
 
 def load_data():
     try:
@@ -30,6 +30,19 @@ def load_data():
 def save_data(data):
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
+
+def load_users_info():
+    try:
+        with open(USERS_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+def save_users_info(info):
+    with open(USERS_FILE, "w", encoding="utf-8") as f:
+        json.dump(info, f, ensure_ascii=False, indent=2)
+
+users_info = load_users_info()
 
 def get_workdays(count=10):
     weekdays_ru = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница"]
@@ -56,6 +69,22 @@ def safe_datetime(date_s, time_s):
                 return None
         return None
 
+def check_limits(user_id, date_str):
+    data = load_data()
+    # Лимит: не более одной записи в день
+    day_count = sum(1 for item in data["schedule"]
+                    if item.get("user_id") == user_id 
+                    and item.get("date") == date_str 
+                    and item.get("status") != "отменено")
+    # Лимит: не более двух записей за 7 дней вперёд
+    today = datetime.strptime(date_str, "%d.%m.%Y")
+    week_days = [(today + timedelta(days=i)).strftime("%d.%m.%Y") for i in range(7)]
+    week_count = sum(1 for item in data["schedule"]
+                     if item.get("user_id") == user_id
+                     and item.get("date") in week_days
+                     and item.get("status") != "отменено")
+    return day_count, week_count
+
 @dp.message(Command("start"))
 async def start(message: types.Message):
     buttons = [
@@ -65,6 +94,7 @@ async def start(message: types.Message):
     ]
     if message.from_user.id == YOUR_TELEGRAM_ID:
         buttons.insert(0, [InlineKeyboardButton(text="🛡 Админ-панель", callback_data="admin_panel")])
+        buttons.insert(1, [InlineKeyboardButton(text="🔎 Поиск слотов", callback_data="admin_slot_search")])
     keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
     await message.answer("👋 Привет! Я бот автоинструктора. Можешь посмотреть расписание и записаться на занятие.", reply_markup=keyboard)
 
@@ -93,9 +123,16 @@ async def user_busy_day(callback: types.CallbackQuery):
 async def select_time(callback: types.CallbackQuery):
     day_date = callback.data.split(":")[1]
     user_id = callback.from_user.id
-    if user_id not in user_context:
-        user_context[user_id] = {}
-    user_context[user_id]["date"] = day_date
+    day_count, week_count = check_limits(user_id, day_date)
+    if day_count >= 1:
+        await callback.message.answer("Лимит: только одна запись на день.")
+        await callback.answer()
+        return
+    if week_count >= 2:
+        await callback.message.answer("Лимит: только две записи на неделю.")
+        await callback.answer()
+        return
+    user_context[user_id] = {"date": day_date}
     data = load_data()
     builder = InlineKeyboardBuilder()
     for t in get_times():
@@ -123,7 +160,11 @@ async def select_time_write_name(callback: types.CallbackQuery):
         await callback.message.answer("Ошибка: некорректное время. Обновите меню!")
         return
     user_context[user_id]["time"] = selected_time
-    if user_id in users_info:
+    if str(user_id) in users_info:
+        ctx = user_context[user_id]
+        ctx["surname"] = users_info[str(user_id)]["surname"]
+        ctx["name"] = users_info[str(user_id)]["name"]
+        user_context[user_id] = ctx
         await callback.message.answer("📍 Введите адрес, куда подъехать:")
     else:
         await callback.message.answer("👤 Введите фамилию и имя через пробел (например: Иванов Иван)")
@@ -134,39 +175,58 @@ async def process_name_or_address(message: types.Message):
     user_id = message.from_user.id
     ctx = user_context.get(user_id, {})
     if ctx.get("date") and ctx.get("time") and "name" not in ctx:
-        if user_id in users_info:
-            ctx["surname"] = users_info[user_id]["surname"]
-            ctx["name"] = users_info[user_id]["name"]
-            user_context[user_id] = ctx
-            await message.answer("📍 Введите адрес, куда подъехать:")
-            return
         parts = message.text.strip().split(" ", 1)
         if len(parts) < 2:
             await message.answer("Пожалуйста, напишите фамилию и имя через пробел.")
             return
         ctx["surname"], ctx["name"] = parts[0], parts[1]
-        users_info[user_id] = {"surname": ctx["surname"], "name": ctx["name"]}
+        users_info[str(user_id)] = {"surname": ctx["surname"], "name": ctx["name"]}
+        save_users_info(users_info)
         user_context[user_id] = ctx
         await message.answer("📍 Введите адрес, куда подъехать:")
         return
     if ctx.get("date") and ctx.get("time") and ctx.get("name") and "address" not in ctx:
         ctx["address"] = message.text.strip()
-        if ctx["time"].strip() not in get_times():
-            await message.answer("Ошибка! Время должно быть строго из списка.")
-            return
-        data = load_data()
-        data["schedule"].append({
-            "date": ctx["date"],
-            "time": ctx["time"].strip(),
-            "name": ctx["name"],
-            "surname": ctx["surname"],
-            "address": ctx["address"],
-            "user_id": user_id
-        })
-        save_data(data)
-        await message.answer(f"✅ Запись сохранена: {ctx['date']} {ctx['time'].strip()} {ctx['surname']} {ctx['name']}, {ctx['address']}")
-        user_context.pop(user_id, None)
+        user_context[user_id] = ctx
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="✅ Подтвердить запись", callback_data="confirm_record")]
+        ])
+        await message.answer(
+           f"Записать на {ctx['date']} {ctx['time']}\nФИО: {ctx['surname']} {ctx['name']}\nАдрес: {ctx['address']}\nНажмите «Подтвердить запись».",
+           reply_markup=kb)
         return
+
+@dp.callback_query(F.data == "confirm_record")
+async def confirm_record(callback: types.CallbackQuery):
+    user_id = callback.from_user.id
+    ctx = user_context.get(user_id, {})
+    if not (ctx.get("date") and ctx.get("time") and ctx.get("name") and ctx.get("address")):
+        await callback.message.answer("Ошибка: не хватает данных для записи.")
+        await callback.answer()
+        return
+    day_count, week_count = check_limits(user_id, ctx["date"])
+    if day_count >= 1:
+        await callback.message.answer("Лимит: только одна запись на день.")
+        await callback.answer()
+        return
+    if week_count >= 2:
+        await callback.message.answer("Лимит: только две записи на неделю.")
+        await callback.answer()
+        return
+    data = load_data()
+    data["schedule"].append({
+        "date": ctx["date"],
+        "time": ctx["time"],
+        "name": ctx["name"],
+        "surname": ctx["surname"],
+        "address": ctx["address"],
+        "user_id": user_id
+    })
+    save_data(data)
+    await callback.message.answer("✅ Запись подтверждена и сохранена!")
+    user_context.pop(user_id, None)
+    await start(callback.message)
+    await callback.answer()
 
 @dp.callback_query(F.data == "view_schedule")
 async def view_schedule(callback: types.CallbackQuery):
@@ -243,6 +303,36 @@ async def admin_panel(callback: types.CallbackQuery):
     await callback.message.answer(text, reply_markup=builder.as_markup())
     await callback.answer()
 
+@dp.callback_query(F.data == "admin_slot_search")
+async def admin_slot_search(callback: types.CallbackQuery):
+    data = load_data()
+    days = sorted(set(item["date"] for item in data["schedule"] if item.get("status") != "отменено"))
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[[InlineKeyboardButton(text=day, callback_data=f"admin_filter_day:{day}")] for day in days]
+    )
+    await callback.message.answer("Выберите день для поиска:", reply_markup=kb)
+    await callback.answer()
+
+@dp.callback_query(F.data.startswith("admin_filter_day:"))
+async def admin_filter_day(callback: types.CallbackQuery):
+    day = callback.data.split(":")[1]
+    times = sorted(set(item["time"] for item in load_data()["schedule"] if item["date"] == day and item.get("status") != "отменено"))
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[[InlineKeyboardButton(text=time, callback_data=f"admin_filter_time:{day}:{time}")] for time in times]
+    )
+    await callback.message.answer("Выберите время:", reply_markup=kb)
+    await callback.answer()
+
+@dp.callback_query(F.data.startswith("admin_filter_time:"))
+async def admin_filter_time(callback: types.CallbackQuery):
+    _, day, time = callback.data.split(":")
+    slots = [item for item in load_data()["schedule"] if item["date"] == day and item["time"] == time and item.get("status") != "отменено"]
+    text = f"Слоты на {day} в {time}:\n" + "\n".join([
+        f"{slot.get('surname','')} {slot.get('name','')}, {slot.get('address','')}" for slot in slots
+    ]) or "Нет записей."
+    await callback.message.answer(text)
+    await callback.answer()
+
 @dp.callback_query(F.data.startswith("admin_slots:"))
 async def admin_slots(callback: types.CallbackQuery):
     day = callback.data.split(":")[1]
@@ -305,7 +395,37 @@ async def admin_cancel_day(callback: types.CallbackQuery):
     await callback.message.answer(f"❌ Все занятия на {day} отменены и день закрыт. Ученики уведомлены.")
     await callback.answer()
 
+async def send_reminders():
+    while True:
+        now = datetime.now()
+        data = load_data()
+        for item in data["schedule"]:
+            if item.get("status") == "отменено":
+                continue
+            session_time = safe_datetime(item["date"], item["time"])
+            if session_time:
+                # Напоминание за сутки (±1 минута)
+                if abs((session_time - now).total_seconds() - 86400) < 60:
+                    try:
+                        await bot.send_message(
+                            item["user_id"], 
+                            f"🔔 Напоминание: занятие завтра в {item['time']} ({item['date']})"
+                        )
+                    except Exception:
+                        pass
+                # Напоминание за 20 минут
+                if 0 < (session_time - now).total_seconds() <= 1200:
+                    try:
+                        await bot.send_message(
+                            item["user_id"], 
+                            f"⏰ Напоминание: занятие через 20 минут!"
+                        )
+                    except Exception:
+                        pass
+        await asyncio.sleep(60)
+
 async def main():
+    asyncio.create_task(send_reminders())
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
