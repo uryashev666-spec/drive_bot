@@ -9,6 +9,7 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.filters import Command
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
+print("СТАРТ БОТА")  # чтобы увидеть, запускается ли вообще код!
 TOKEN = "7818982442:AAGY-DDMsuvhLg0-Ec1ds43SkAmCltR88cI"
 YOUR_TELEGRAM_ID = 487289287
 DATA_FILE = "data.json"
