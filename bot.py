@@ -92,7 +92,6 @@ async def start(message: types.Message):
     ]
     if message.from_user.id == YOUR_TELEGRAM_ID:
         buttons.insert(0, [InlineKeyboardButton(text="🛡 Админ-панель", callback_data="admin_panel")])
-        buttons.insert(1, [InlineKeyboardButton(text="🔎 Поиск слотов", callback_data="admin_slot_search")])
     keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
     await message.answer("👋 Привет! Я бот автоинструктора. Можешь посмотреть расписание и записаться на занятие.", reply_markup=keyboard)
 
@@ -287,66 +286,31 @@ async def admin_panel(callback: types.CallbackQuery):
         return
     data = load_data()
     now = datetime.now()
-    upcoming_days = sorted(set(
-        item["date"]
-        for item in data["schedule"]
-        if safe_datetime(item["date"], item["time"]) and safe_datetime(item["date"], item["time"]) > now
-    ))
+    # Найти все слоты на будущее, они отображаются списком
+    upcoming_slots = [
+        item for item in data["schedule"]
+        if item.get("status") != "отменено"
+           and safe_datetime(item["date"], item["time"])
+           and safe_datetime(item["date"], item["time"]) > now
+    ]
     builder = InlineKeyboardBuilder()
-    text = "<b>Управление занятиями:</b>\n\n"
-    for day in upcoming_days:
-        builder.button(text=f"❌ Отменить день {day}", callback_data=f"admin_cancel_day:{day}")
-        builder.button(text=f"👉 Слоты {day}", callback_data=f"admin_slots:{day}")
-    builder.adjust(2)
-    await callback.message.answer(text, reply_markup=builder.as_markup())
-    await callback.answer()
-
-@dp.callback_query(F.data == "admin_slot_search")
-async def admin_slot_search(callback: types.CallbackQuery):
-    data = load_data()
-    days = sorted(set(item["date"] for item in data["schedule"] if item.get("status") != "отменено"))
-    kb = InlineKeyboardMarkup(
-        inline_keyboard=[[InlineKeyboardButton(text=day, callback_data=f"admin_filter_day:{day}")] for day in days]
-    )
-    await callback.message.answer("Выберите день для поиска:", reply_markup=kb)
-    await callback.answer()
-
-@dp.callback_query(F.data.startswith("admin_filter_day:"))
-async def admin_filter_day(callback: types.CallbackQuery):
-    day = callback.data.split(":")[1]
-    times = sorted(set(item["time"] for item in load_data()["schedule"] if item["date"] == day and item.get("status") != "отменено"))
-    kb = InlineKeyboardMarkup(
-        inline_keyboard=[[InlineKeyboardButton(text=time, callback_data=f"admin_filter_time:{day}:{time}")] for time in times]
-    )
-    await callback.message.answer("Выберите время:", reply_markup=kb)
-    await callback.answer()
-
-@dp.callback_query(F.data.startswith("admin_filter_time:"))
-async def admin_filter_time(callback: types.CallbackQuery):
-    parts = callback.data.split(":")
-    day = parts[1]
-    time = ":".join(parts[2:])
-    slots = [item for item in load_data()["schedule"] if item["date"] == day and item["time"] == time and item.get("status") != "отменено"]
-    text = f"Слоты на {day} в {time}:\n" + "\n".join([
-        f"{slot.get('surname','')} {slot.get('name','')}, {slot.get('address','')}" for slot in slots
-    ]) or "Нет записей."
-    await callback.message.answer(text)
-    await callback.answer()
-
-@dp.callback_query(F.data.startswith("admin_slots:"))
-async def admin_slots(callback: types.CallbackQuery):
-    day = callback.data.split(":")[1]
-    data = load_data()
-    slots = [item for item in data["schedule"] if item["date"] == day and item.get("status") != "отменено"]
-    builder = InlineKeyboardBuilder()
-    text = f"Слоты на {day}:\n"
-    for idx, slot in enumerate(slots, 1):
-        cancel_id = slot["user_id"]
-        slot_time = slot["time"]
-        slot_text = f"{slot_time}: {slot.get('surname','')} {slot.get('name','')} {slot.get('address','')}"
-        text += f"{idx}. {slot_text}\n"
-        builder.button(text=f"❌+{slot_time}", callback_data=f"admin_cancel_slot:{day}:{slot_time}:{cancel_id}:free")
-        builder.button(text=f"⛔{slot_time}", callback_data=f"admin_cancel_slot:{day}:{slot_time}:{cancel_id}:nofree")
+    text = "<b>Админ: отменить отдельное занятие</b>\n\n"
+    for idx, slot in enumerate(upcoming_slots, 1):
+        day = slot["date"]
+        time = slot["time"]
+        uid = slot["user_id"]
+        name = slot.get("surname", "") + " " + slot.get("name", "")
+        address = slot.get("address", "")
+        text += f"{idx}. {day} {time} — {name}, {address}\n"
+        # Две кнопки: освободить этот слот или закрыть
+        builder.button(
+            text=f"Освободить ({day} {time})",
+            callback_data=f"admin_cancel_slot:{day}:{time}:{uid}:free"
+        )
+        builder.button(
+            text=f"Закрыть ({day} {time})",
+            callback_data=f"admin_cancel_slot:{day}:{time}:{uid}:nofree"
+        )
     builder.adjust(2)
     await callback.message.answer(text, reply_markup=builder.as_markup())
     await callback.answer()
@@ -404,7 +368,6 @@ async def send_reminders():
                 continue
             session_time = safe_datetime(item["date"], item["time"])
             if session_time:
-                # За сутки
                 if abs((session_time - now).total_seconds() - 86400) < 60:
                     try:
                         await bot.send_message(
@@ -413,7 +376,6 @@ async def send_reminders():
                         )
                     except Exception:
                         pass
-                # За 20 минут
                 if 0 < (session_time - now).total_seconds() <= 1200:
                     try:
                         await bot.send_message(
