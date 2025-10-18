@@ -81,7 +81,7 @@ def week_limit(user_id, new_date):
 @dp.message(Command("start"))
 async def start(message: types.Message):
     buttons = [
-        [InlineKeyboardButton(text="📅 Расписание", callback_data="view_schedule")],
+        [InlineKeyboardButton(text="📅 Моё расписание", callback_data="view_schedule")],
         [InlineKeyboardButton(text="✏️ Записаться", callback_data="add_record")],
         [InlineKeyboardButton(text="💬 Написать инструктору", url=TELEGRAM_LINK)]
     ]
