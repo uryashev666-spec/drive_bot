@@ -1,6 +1,9 @@
 import asyncio
 import json
 import logging
+import os
+import sys
+import aiohttp
 from datetime import datetime, timedelta
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.enums import ParseMode
@@ -13,6 +16,7 @@ YOUR_TELEGRAM_ID = 487289287
 DATA_FILE = "data.json"
 USERS_FILE = "users_info.json"
 TELEGRAM_LINK = "https://t.me/sv010ch"
+GITHUB_RAW_URL = "https://raw.githubusercontent.com/uryashev666-spec/drive_bot/main/bot.py"
 
 logging.basicConfig(level=logging.INFO)
 bot = Bot(token=TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
@@ -259,6 +263,7 @@ async def user_cancel(callback: types.CallbackQuery):
                 )
             except Exception:
                 pass
+    await start(callback.message)  # Возврат в главное меню
     await callback.answer()
 
 @dp.callback_query(F.data == "admin_panel")
@@ -276,7 +281,6 @@ async def admin_panel(callback: types.CallbackQuery):
            and safe_datetime(item["date"], item["time"]) > now
     ]
     await callback.message.answer("<b>АДМИНИСТРАТОР: Управление занятиями</b>", parse_mode="HTML")
-    # для каждого слота отдельное сообщение с кнопками
     for idx, slot in enumerate(user_slots, 1):
         day = slot["date"]
         time = slot["time"]
@@ -349,6 +353,30 @@ async def admin_cancel_day_close(callback: types.CallbackQuery):
     await callback.message.answer(f"❌ Все занятия на {day} отменены и слоты закрыты. Сообщение отправлено {cancelled} ученикам.")
     await callback.answer()
 
+
+### ПРОВЕРКА и автообновление кода с GitHub (в фоне)
+async def auto_update_code():
+    current_file = sys.argv[0]
+    last_hash = None
+    while True:
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(GITHUB_RAW_URL) as resp:
+                    if resp.status == 200:
+                        remote_code = await resp.text()
+                        remote_hash = hash(remote_code)
+                        if last_hash is None:
+                            last_hash = remote_hash
+                        elif remote_hash != last_hash:
+                            with open(current_file, "w", encoding="utf-8") as f:
+                                f.write(remote_code)
+                            print("GitHub code updated. Restarting bot.")
+                            os.execv(sys.executable, [sys.executable] + sys.argv)
+                            return
+        except Exception as e:
+            print("Update error:", e)
+        await asyncio.sleep(60)
+
 async def send_reminders():
     while True:
         now = datetime.now()
@@ -378,6 +406,7 @@ async def send_reminders():
 
 async def main():
     asyncio.create_task(send_reminders())
+    asyncio.create_task(auto_update_code())
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
