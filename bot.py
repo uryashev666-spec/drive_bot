@@ -223,25 +223,136 @@ async def view_schedule(callback: types.CallbackQuery):
            and safe_datetime(item['date'], item['time']) and safe_datetime(item['date'], item['time']) > now
     ]
     my_records.sort(key=lambda item: safe_datetime(item['date'], item['time']) or datetime.max)
-    text_lines = []
+    text = ""
     builder = []
-    for idx, item in enumerate(my_records, 1):
-        text_lines.append(
-            f"{idx}. {item['date']} {item['time']} {item.get('surname', '')} {item.get('name', '')}, {item.get('address', '')}"
-        )
+    for idx, item in enumerate(my_records):
+        text += f"🟢 Моя запись {idx+1}:\nДата: {item['date']}\nВремя: {item['time']}\nАдрес: {item['address']}\n"
         builder.append([InlineKeyboardButton(
             text=f"❌ Отменить {item['date']} {item['time']}",
             callback_data=f"user_cancel:{item['date']}:{item['time']}"
         )])
-    if not text_lines:
+    if not text:
         text = "У вас нет записей на ближайшее время."
-    else:
-        text = "\n".join(text_lines)
-    keyboard = InlineKeyboardMarkup(inline_keyboard=builder) if builder else None
+    keyboard = InlineKeyboardMarkup(inline_keyboard=builder)
     await callback.message.answer(text, reply_markup=keyboard)
     await callback.answer()
 
-# ... остальные admin функции, напоминания и автообновление такие же, как в исходном файле ...
+@dp.callback_query(F.data.startswith("user_cancel:"))
+async def user_cancel(callback: types.CallbackQuery):
+    user_id = callback.from_user.id
+    prefix = "user_cancel:"
+    rest = callback.data[len(prefix):]
+    date_s, time_s = rest.split(":", 1)
+    data = load_data()
+    found = next((item for item in data["schedule"] if
+                  item["date"]==date_s and item["time"]==time_s and item.get("user_id")==user_id and item.get("status")!="отменено"), None)
+    if not found:
+        await callback.message.answer("Запись не найдена.")
+        await callback.answer()
+        return
+    found["status"] = "отменено"
+    save_data(data)
+    await callback.message.answer(f"✅ Ваша запись {date_s} {time_s} отменена! Все получат уведомление о свободном времени.")
+    all_users = set(item["user_id"] for item in data["schedule"]) | {user_id}
+    for uid in all_users:
+        if uid != user_id:
+            try:
+                await bot.send_message(
+                    uid,
+                    f"🔔 Освободилось время занятий!\nДата: {date_s}\nВремя: {time_s}\nМожете записаться!"
+                )
+            except Exception:
+                pass
+    await start(callback.message)
+    await callback.answer()
+
+@dp.callback_query(F.data == "admin_panel")
+async def admin_panel(callback: types.CallbackQuery):
+    if callback.from_user.id != YOUR_TELEGRAM_ID:
+        await callback.message.answer('⛔ Только для администратора!')
+        await callback.answer()
+        return
+    data = load_data()
+    now = datetime.now()
+    user_slots = [
+        item for item in data["schedule"]
+        if item.get("status") != "отменено"
+           and safe_datetime(item["date"], item["time"])
+           and safe_datetime(item["date"], item["time"]) > now
+    ]
+    await callback.message.answer("<b>АДМИНИСТРАТОР: Управление занятиями</b>", parse_mode="HTML")
+    for idx, slot in enumerate(user_slots, 1):
+        day = slot["date"]
+        time = slot["time"]
+        uid = slot["user_id"]
+        name = slot.get("surname", "") + " " + slot.get("name", "")
+        address = slot.get("address", "")
+        text = f"{idx}. {day} {time} — {name}, {address}"
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="Освободить", callback_data=f"admin_cancel_slot:{day}:{time}:{uid}:free"),
+             InlineKeyboardButton(text="Закрыть", callback_data=f"admin_cancel_slot:{day}:{time}:{uid}:nofree")]
+        ])
+        await callback.message.answer(text, reply_markup=kb)
+    upcoming_days = sorted(set(slot["date"] for slot in user_slots))
+    if upcoming_days:
+        kb_days = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text=f"❌ Закрыть все занятия на {day}", callback_data=f"admin_cancel_day_close:{day}")]
+                for day in upcoming_days
+            ]
+        )
+        await callback.message.answer("Закрытие всех занятий на день:", reply_markup=kb_days)
+    await callback.answer()
+
+@dp.callback_query(F.data.startswith("admin_cancel_slot:"))
+async def admin_cancel_slot(callback: types.CallbackQuery):
+    prefix = "admin_cancel_slot:"
+    rest = callback.data[len(prefix):]
+    parts = rest.rsplit(":", 2)
+    day_time = parts[0]
+    cancel_id = parts[1]
+    cancel_type = parts[2]
+    day, slot_time = day_time.split(":", 1)
+    slot_time = slot_time.strip()
+    data = load_data()
+    slot = next((item for item in data["schedule"] if item["date"] == day and item["time"].strip() == slot_time and str(item["user_id"]) == cancel_id and item.get("status") != "отменено"), None)
+    if not slot:
+        await callback.message.answer("Слот не найден.")
+        await callback.answer()
+        return
+    slot["status"] = "отменено"
+    save_data(data)
+    try:
+        if cancel_type == "free":
+            await bot.send_message(int(cancel_id), f"⛔ Ваше занятие {day} {slot_time} отменено, слот освобожден для других учеников.")
+            await callback.message.answer("Слот отменён и освобождён (станет доступен другим).")
+        else:
+            await bot.send_message(int(cancel_id), f"⛔ Занятие отменено в связи с технической необходимостью")
+            await callback.message.answer("Слот отменён и закрыт (для других не будет доступен).")
+    except Exception:
+        pass
+    await callback.answer()
+
+@dp.callback_query(F.data.startswith("admin_cancel_day_close:"))
+async def admin_cancel_day_close(callback: types.CallbackQuery):
+    _, day = callback.data.split(":")
+    data = load_data()
+    cancelled = 0
+    for slot in data["schedule"]:
+        if slot.get("date") == day and slot.get("status") != "отменено":
+            slot["status"] = "отменено"
+            cancelled += 1
+            try:
+                await bot.send_message(
+                    slot["user_id"],
+                    "⛔ Занятие отменено в связи с технической необходимостью"
+                )
+            except Exception:
+                pass
+    save_data(data)
+    await callback.message.answer(f"❌ Все занятия на {day} отменены и слоты закрыты. Сообщение отправлено {cancelled} ученикам.")
+    await callback.answer()
+
 
 async def auto_update_code():
     current_file = sys.argv[0]
@@ -279,7 +390,7 @@ async def send_reminders():
                 if abs((session_time - now).total_seconds() - 86400) < 60:
                     try:
                         await bot.send_message(
-                            item["user_id"],
+                            item["user_id"], 
                             f"🔔 Напоминание: занятие завтра в {item['time']} ({item['date']})"
                         )
                     except Exception:
@@ -287,7 +398,7 @@ async def send_reminders():
                 if 0 < (session_time - now).total_seconds() <= 1200:
                     try:
                         await bot.send_message(
-                            item["user_id"],
+                            item["user_id"], 
                             f"⏰ Напоминание: занятие через 20 минут!"
                         )
                     except Exception:
