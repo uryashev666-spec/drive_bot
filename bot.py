@@ -7,9 +7,7 @@ from aiogram.enums import ParseMode
 from aiogram.client.default import DefaultBotProperties
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.filters import Command
-from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-print("СТАРТ БОТА")  # чтобы увидеть, запускается ли вообще код!
 TOKEN = "7818982442:AAGY-DDMsuvhLg0-Ec1ds43SkAmCltR88cI"
 YOUR_TELEGRAM_ID = 487289287
 DATA_FILE = "data.json"
@@ -93,15 +91,15 @@ async def add_record(callback: types.CallbackQuery):
     user_id = callback.from_user.id
     user_context[user_id] = {}
     data = load_data()
-    builder = InlineKeyboardBuilder()
+    builder = []
     for day_name, day_date in get_workdays(7):
         busy = any(item["date"] == day_date and item["user_id"] == user_id and item.get("status") != "отменено"
                    for item in data["schedule"])
         text = f"🚫 {day_name}, {day_date}" if busy else f"{day_name}, {day_date}"
         cdata = "user_busy_day" if busy else f"select_day:{day_date}"
-        builder.button(text=text, callback_data=cdata)
-    builder.adjust(1)
-    await callback.message.answer("📅 Выберите день:", reply_markup=builder.as_markup())
+        builder.append([InlineKeyboardButton(text=text, callback_data=cdata)])
+    keyboard = InlineKeyboardMarkup(inline_keyboard=builder)
+    await callback.message.answer("📅 Выберите день:", reply_markup=keyboard)
     await callback.answer()
 
 @dp.callback_query(F.data == "user_busy_day")
@@ -120,15 +118,15 @@ async def select_time(callback: types.CallbackQuery):
         return
     user_context[user_id] = {"date": day_date}
     data = load_data()
-    builder = InlineKeyboardBuilder()
+    builder = []
     for t in get_times():
         busy = any(item["date"] == day_date and item["time"] == t and item.get("status") != "отменено"
                    for item in data["schedule"])
         text = f"❌ {t}" if busy else t
         cdata = "busy" if busy else f"select_time:{t}"
-        builder.button(text=text, callback_data=cdata)
-    builder.adjust(3)
-    await callback.message.answer(f"🕒 Дата выбрана: {day_date}\nВыберите время занятия:", reply_markup=builder.as_markup())
+        builder.append([InlineKeyboardButton(text=text, callback_data=cdata)])
+    keyboard = InlineKeyboardMarkup(inline_keyboard=builder)
+    await callback.message.answer(f"🕒 Дата выбрана: {day_date}\nВыберите время занятия:", reply_markup=keyboard)
     await callback.answer()
 
 @dp.callback_query(F.data == "busy")
@@ -222,17 +220,17 @@ async def view_schedule(callback: types.CallbackQuery):
     ]
     my_records.sort(key=lambda item: safe_datetime(item['date'], item['time']) or datetime.max)
     text = ""
-    builder = InlineKeyboardBuilder()
+    builder = []
     for idx, item in enumerate(my_records):
         text += f"🟢 Моя запись {idx+1}:\nДата: {item['date']}\nВремя: {item['time']}\nАдрес: {item['address']}\n"
-        builder.button(
+        builder.append([InlineKeyboardButton(
             text=f"❌ Отменить {item['date']} {item['time']}",
             callback_data=f"user_cancel:{item['date']}:{item['time']}"
-        )
+        )])
     if not text:
         text = "У вас нет записей на ближайшее время."
-    builder.adjust(1)
-    await callback.message.answer(text, reply_markup=builder.as_markup())
+    keyboard = InlineKeyboardMarkup(inline_keyboard=builder)
+    await callback.message.answer(text, reply_markup=keyboard)
     await callback.answer()
 
 @dp.callback_query(F.data.startswith("user_cancel:"))
@@ -277,28 +275,29 @@ async def admin_panel(callback: types.CallbackQuery):
            and safe_datetime(item["date"], item["time"])
            and safe_datetime(item["date"], item["time"]) > now
     ]
-    text = "<b>АДМИНИСТРАТОР: Управление занятиями</b>\n\n"
-    builder = InlineKeyboardBuilder()
+    await callback.message.answer("<b>АДМИНИСТРАТОР: Управление занятиями</b>", parse_mode="HTML")
+    # для каждого слота отдельное сообщение с кнопками
     for idx, slot in enumerate(user_slots, 1):
         day = slot["date"]
         time = slot["time"]
         uid = slot["user_id"]
         name = slot.get("surname", "") + " " + slot.get("name", "")
         address = slot.get("address", "")
-        text += f"{idx}. {day} {time} — {name}, {address}\n"
-        builder.button(
-            text=f"Освободить",
-            callback_data=f"admin_cancel_slot:{day}:{time}:{uid}:free"
-        )
-        builder.button(
-            text=f"Закрыть",
-            callback_data=f"admin_cancel_slot:{day}:{time}:{uid}:nofree"
-        )
-        builder.adjust(2)
+        text = f"{idx}. {day} {time} — {name}, {address}"
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="Освободить", callback_data=f"admin_cancel_slot:{day}:{time}:{uid}:free"),
+             InlineKeyboardButton(text="Закрыть", callback_data=f"admin_cancel_slot:{day}:{time}:{uid}:nofree")]
+        ])
+        await callback.message.answer(text, reply_markup=kb)
     upcoming_days = sorted(set(slot["date"] for slot in user_slots))
-    for day in upcoming_days:
-        builder.button(text=f"❌ Закрыть все занятия на {day}", callback_data=f"admin_cancel_day_close:{day}")
-    await callback.message.answer(text, reply_markup=builder.as_markup())
+    if upcoming_days:
+        kb_days = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text=f"❌ Закрыть все занятия на {day}", callback_data=f"admin_cancel_day_close:{day}")]
+                for day in upcoming_days
+            ]
+        )
+        await callback.message.answer("Закрытие всех занятий на день:", reply_markup=kb_days)
     await callback.answer()
 
 @dp.callback_query(F.data.startswith("admin_cancel_slot:"))
