@@ -96,7 +96,7 @@ async def add_record(callback: types.CallbackQuery):
     user_context[user_id] = {}
     data = load_data()
     builder = []
-    for day_name, day_date in get_workdays(7):
+    for day_name, day_date in get_workdays(10):
         busy = any(item["date"] == day_date and item["user_id"] == user_id and item.get("status") != "отменено"
                    for item in data["schedule"])
         text = f"🚫 {day_name}, {day_date}" if busy else f"{day_name}, {day_date}"
@@ -263,7 +263,7 @@ async def user_cancel(callback: types.CallbackQuery):
                 )
             except Exception:
                 pass
-    await start(callback.message)  # Возврат в главное меню
+    await start(callback.message)
     await callback.answer()
 
 @dp.callback_query(F.data == "admin_panel")
@@ -354,10 +354,10 @@ async def admin_cancel_day_close(callback: types.CallbackQuery):
     await callback.answer()
 
 
-### ПРОВЕРКА и автообновление кода с GitHub (в фоне)
 async def auto_update_code():
     current_file = sys.argv[0]
     last_hash = None
+    print("Проверка обновлений с GitHub активна!")
     while True:
         try:
             async with aiohttp.ClientSession() as session:
@@ -368,13 +368,14 @@ async def auto_update_code():
                         if last_hash is None:
                             last_hash = remote_hash
                         elif remote_hash != last_hash:
+                            print("❗Обнаружено обновление кода на GitHub!")
                             with open(current_file, "w", encoding="utf-8") as f:
                                 f.write(remote_code)
-                            print("GitHub code updated. Restarting bot.")
+                            print("Код обновлён. Перезапуск...")
                             os.execv(sys.executable, [sys.executable] + sys.argv)
                             return
         except Exception as e:
-            print("Update error:", e)
+            print("Ошибка проверки обновления:", e)
         await asyncio.sleep(60)
 
 async def send_reminders():
@@ -405,9 +406,11 @@ async def send_reminders():
         await asyncio.sleep(60)
 
 async def main():
+    print("Бот стартует.")
     asyncio.create_task(send_reminders())
     asyncio.create_task(auto_update_code())
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
+    print("=== Новый запуск DRIVE_BOT ===")
     asyncio.run(main())
