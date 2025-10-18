@@ -71,12 +71,10 @@ def safe_datetime(date_s, time_s):
 
 def check_limits(user_id, date_str):
     data = load_data()
-    # Лимит: не более одной записи в день
     day_count = sum(1 for item in data["schedule"]
                     if item.get("user_id") == user_id 
                     and item.get("date") == date_str 
                     and item.get("status") != "отменено")
-    # Лимит: не более двух записей за 7 дней вперёд
     today = datetime.strptime(date_str, "%d.%m.%Y")
     week_days = [(today + timedelta(days=i)).strftime("%d.%m.%Y") for i in range(7)]
     week_count = sum(1 for item in data["schedule"]
@@ -325,7 +323,9 @@ async def admin_filter_day(callback: types.CallbackQuery):
 
 @dp.callback_query(F.data.startswith("admin_filter_time:"))
 async def admin_filter_time(callback: types.CallbackQuery):
-    _, day, time = callback.data.split(":")
+    parts = callback.data.split(":")
+    day = parts[1]
+    time = ":".join(parts[2:])
     slots = [item for item in load_data()["schedule"] if item["date"] == day and item["time"] == time and item.get("status") != "отменено"]
     text = f"Слоты на {day} в {time}:\n" + "\n".join([
         f"{slot.get('surname','')} {slot.get('name','')}, {slot.get('address','')}" for slot in slots
@@ -404,7 +404,7 @@ async def send_reminders():
                 continue
             session_time = safe_datetime(item["date"], item["time"])
             if session_time:
-                # Напоминание за сутки (±1 минута)
+                # За сутки
                 if abs((session_time - now).total_seconds() - 86400) < 60:
                     try:
                         await bot.send_message(
@@ -413,7 +413,7 @@ async def send_reminders():
                         )
                     except Exception:
                         pass
-                # Напоминание за 20 минут
+                # За 20 минут
                 if 0 < (session_time - now).total_seconds() <= 1200:
                     try:
                         await bot.send_message(
