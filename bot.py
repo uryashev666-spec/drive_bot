@@ -207,6 +207,20 @@ async def confirm_record(callback: types.CallbackQuery):
         "user_id": user_id
     })
     save_data(data)
+
+    # отправляем вам карточку с инфо о новой записи
+    card_text = (
+        f"🚗 <b>Новая запись!</b>\n"
+        f"Дата: <b>{ctx['date']}</b>\n"
+        f"Время: <b>{ctx['time']}</b>\n"
+        f"ФИО: <b>{ctx['surname']} {ctx['name']}</b>\n"
+        f"Адрес: <b>{ctx['address']}</b>"
+    )
+    try:
+        await bot.send_message(YOUR_TELEGRAM_ID, card_text, parse_mode="HTML")
+    except Exception:
+        pass
+
     await callback.message.answer("✅ Запись подтверждена и сохранена!")
     user_context.pop(user_id, None)
     await start(callback.message)
