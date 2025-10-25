@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.enums import ParseMode
 from aiogram.client.default import DefaultBotProperties
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
 from aiogram.filters import Command
 
 TOKEN = "7818982442:AAGY-DDMsuvhLg0-Ec1ds43SkAmCltR88cI"
@@ -22,6 +22,16 @@ logging.basicConfig(level=logging.INFO)
 bot = Bot(token=TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher()
 user_context = {}
+
+main_menu_kb = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton(text="📅 Моё расписание")],
+        [KeyboardButton(text="✏️ Записаться")],
+        [KeyboardButton(text="💬 Инструктор")]
+    ],
+    resize_keyboard=True,
+    one_time_keyboard=False
+)
 
 def load_data():
     try:
@@ -88,7 +98,26 @@ async def start(message: types.Message):
     if message.from_user.id == YOUR_TELEGRAM_ID:
         buttons.insert(0, [InlineKeyboardButton(text="🛡 Админ-панель", callback_data="admin_panel")])
     keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
-    await message.answer("👋 Привет! Я бот автоинструктора. Можешь посмотреть расписание и записаться на занятие.", reply_markup=keyboard)
+    await message.answer(
+        "👋 Привет! Я бот автоинструктора. Можешь посмотреть расписание и записаться на занятие.",
+        reply_markup=main_menu_kb
+    )
+    await message.answer("Меню управления:", reply_markup=keyboard)
+
+@dp.message()
+async def handler_menu_and_input(message: types.Message):
+    text = message.text.strip()
+    if text == "📅 Моё расписание":
+        await view_schedule(types.CallbackQuery(message=message, from_user=message.from_user))
+        return
+    elif text == "✏️ Записаться":
+        await add_record(types.CallbackQuery(message=message, from_user=message.from_user))
+        return
+    elif text == "💬 Инструктор":
+        await message.answer("Вы можете написать инструктору: " + TELEGRAM_LINK)
+        return
+    # Всё остальное: ФИО, адрес, старый ввод
+    await process_name_or_address(message)
 
 @dp.callback_query(F.data == "add_record")
 async def add_record(callback: types.CallbackQuery):
@@ -158,7 +187,6 @@ async def select_time_write_name(callback: types.CallbackQuery):
         await callback.message.answer("👤 Введите фамилию и имя через пробел (например: Иванов Иван)")
     await callback.answer()
 
-@dp.message()
 async def process_name_or_address(message: types.Message):
     user_id = message.from_user.id
     ctx = user_context.get(user_id, {})
@@ -189,12 +217,12 @@ async def confirm_record(callback: types.CallbackQuery):
     user_id = callback.from_user.id
     ctx = user_context.get(user_id, {})
     if not (ctx.get("date") and ctx.get("time") and ctx.get("name") and ctx.get("address")):
-        await callback.message.answer("Ошибка: не хватает данных для записи.")
+        await callback.message.answer("Ошибка: не хватает данных для записи.", reply_markup=main_menu_kb)
         await callback.answer()
         return
     week_count = week_limit(user_id, ctx["date"])
     if week_count >= 2:
-        await callback.message.answer("Лимит: не более двух занятий для ученика за любые 7 дней подряд.")
+        await callback.message.answer("Лимит: не более двух занятий для ученика за любые 7 дней подряд.", reply_markup=main_menu_kb)
         await callback.answer()
         return
     data = load_data()
@@ -207,8 +235,6 @@ async def confirm_record(callback: types.CallbackQuery):
         "user_id": user_id
     })
     save_data(data)
-
-    # отправляем вам карточку с инфо о новой записи
     card_text = (
         f"🚗 <b>Новая запись!</b>\n"
         f"Дата: <b>{ctx['date']}</b>\n"
@@ -220,8 +246,7 @@ async def confirm_record(callback: types.CallbackQuery):
         await bot.send_message(YOUR_TELEGRAM_ID, card_text, parse_mode="HTML")
     except Exception:
         pass
-
-    await callback.message.answer("✅ Запись подтверждена и сохранена!")
+    await callback.message.answer("✅ Запись подтверждена и сохранена!", reply_markup=main_menu_kb)
     user_context.pop(user_id, None)
     await start(callback.message)
     await callback.answer()
@@ -261,12 +286,12 @@ async def user_cancel(callback: types.CallbackQuery):
     found = next((item for item in data["schedule"] if
                   item["date"]==date_s and item["time"]==time_s and item.get("user_id")==user_id and item.get("status")!="отменено"), None)
     if not found:
-        await callback.message.answer("Запись не найдена.")
+        await callback.message.answer("Запись не найдена.", reply_markup=main_menu_kb)
         await callback.answer()
         return
     found["status"] = "отменено"
     save_data(data)
-    await callback.message.answer(f"✅ Ваша запись {date_s} {time_s} отменена! Все получат уведомление о свободном времени.")
+    await callback.message.answer(f"✅ Ваша запись {date_s} {time_s} отменена! Все получат уведомление о свободном времени.", reply_markup=main_menu_kb)
     all_users = set(item["user_id"] for item in data["schedule"]) | {user_id}
     for uid in all_users:
         if uid != user_id:
@@ -280,10 +305,11 @@ async def user_cancel(callback: types.CallbackQuery):
     await start(callback.message)
     await callback.answer()
 
+# -------- Админ-панель и оставшиеся функции сохраняются по вашему оригиналу --------
 @dp.callback_query(F.data == "admin_panel")
 async def admin_panel(callback: types.CallbackQuery):
     if callback.from_user.id != YOUR_TELEGRAM_ID:
-        await callback.message.answer('⛔ Только для администратора!')
+        await callback.message.answer('⛔ Только для администратора!', reply_markup=main_menu_kb)
         await callback.answer()
         return
     data = load_data()
@@ -294,7 +320,7 @@ async def admin_panel(callback: types.CallbackQuery):
            and safe_datetime(item["date"], item["time"])
            and safe_datetime(item["date"], item["time"]) > now
     ]
-    await callback.message.answer("<b>АДМИНИСТРАТОР: Управление занятиями</b>", parse_mode="HTML")
+    await callback.message.answer("<b>АДМИНИСТРАТОР: Управление занятиями</b>", parse_mode="HTML", reply_markup=main_menu_kb)
     for idx, slot in enumerate(user_slots, 1):
         day = slot["date"]
         time = slot["time"]
@@ -331,7 +357,7 @@ async def admin_cancel_slot(callback: types.CallbackQuery):
     data = load_data()
     slot = next((item for item in data["schedule"] if item["date"] == day and item["time"].strip() == slot_time and str(item["user_id"]) == cancel_id and item.get("status") != "отменено"), None)
     if not slot:
-        await callback.message.answer("Слот не найден.")
+        await callback.message.answer("Слот не найден.", reply_markup=main_menu_kb)
         await callback.answer()
         return
     slot["status"] = "отменено"
@@ -339,10 +365,10 @@ async def admin_cancel_slot(callback: types.CallbackQuery):
     try:
         if cancel_type == "free":
             await bot.send_message(int(cancel_id), f"⛔ Ваше занятие {day} {slot_time} отменено, слот освобожден для других учеников.")
-            await callback.message.answer("Слот отменён и освобождён (станет доступен другим).")
+            await callback.message.answer("Слот отменён и освобождён (станет доступен другим).", reply_markup=main_menu_kb)
         else:
             await bot.send_message(int(cancel_id), f"⛔ Занятие отменено в связи с технической необходимостью")
-            await callback.message.answer("Слот отменён и закрыт (для других не будет доступен).")
+            await callback.message.answer("Слот отменён и закрыт (для других не будет доступен).", reply_markup=main_menu_kb)
     except Exception:
         pass
     await callback.answer()
@@ -364,7 +390,7 @@ async def admin_cancel_day_close(callback: types.CallbackQuery):
             except Exception:
                 pass
     save_data(data)
-    await callback.message.answer(f"❌ Все занятия на {day} отменены и слоты закрыты. Сообщение отправлено {cancelled} ученикам.")
+    await callback.message.answer(f"❌ Все занятия на {day} отменены и слоты закрыты. Сообщение отправлено {cancelled} ученикам.", reply_markup=main_menu_kb)
     await callback.answer()
 
 
@@ -404,7 +430,7 @@ async def send_reminders():
                 if abs((session_time - now).total_seconds() - 86400) < 60:
                     try:
                         await bot.send_message(
-                            item["user_id"], 
+                            item["user_id"],
                             f"🔔 Напоминание: занятие завтра в {item['time']} ({item['date']})"
                         )
                     except Exception:
@@ -412,7 +438,7 @@ async def send_reminders():
                 if 0 < (session_time - now).total_seconds() <= 1200:
                     try:
                         await bot.send_message(
-                            item["user_id"], 
+                            item["user_id"],
                             f"⏰ Напоминание: занятие через 20 минут!"
                         )
                     except Exception:
