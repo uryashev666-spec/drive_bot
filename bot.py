@@ -238,4 +238,142 @@ async def process_name_or_address(message: types.Message):
             [InlineKeyboardButton(text="✅ Подтвердить запись", callback_data="confirm_record")]
         ])
         await message.answer(
-           f"Записать на {ctx['date']} {ctx['time']}\nФИО: {ctx['surname']} {ctx['name']
+           f"Записать на {ctx['date']} {ctx['time']}\nФИО: {ctx['surname']} {ctx['name']}\nАдрес: {ctx['address']}\nНажмите «Подтвердить запись».",
+           reply_markup=kb)
+        return
+
+@dp.callback_query(F.data == "confirm_record")
+async def confirm_record(callback: types.CallbackQuery):
+    user_id = callback.from_user.id
+    ctx = user_context.get(user_id, {})
+    if not (ctx.get("date") and ctx.get("time") and ctx.get("name") and ctx.get("address")):
+        await callback.message.answer("Ошибка: не хватает данных для записи.", reply_markup=main_menu_kb)
+        await callback.answer()
+        return
+    week_count = week_limit(user_id, ctx["date"])
+    if week_count >= 2:
+        await callback.message.answer("Лимит: не более двух занятий для ученика за любые 7 дней подряд.", reply_markup=main_menu_kb)
+        await callback.answer()
+        return
+    data = load_data()
+    data["schedule"].append({
+        "date": ctx["date"],
+        "time": ctx["time"],
+        "name": ctx["name"],
+        "surname": ctx["surname"],
+        "address": ctx["address"],
+        "user_id": user_id
+    })
+    save_data(data)
+    card_text = (
+        f"🚗 <b>Новая запись!</b>\n"
+        f"Дата: <b>{ctx['date']}</b>\n"
+        f"Время: <b>{ctx['time']}</b>\n"
+        f"ФИО: <b>{ctx['surname']} {ctx['name']}</b>\n"
+        f"Адрес: <b>{ctx['address']}</b>"
+    )
+    try:
+        await bot.send_message(YOUR_TELEGRAM_ID, card_text, parse_mode="HTML")
+    except Exception:
+        pass
+    await callback.message.answer("✅ Запись подтверждена и сохранена!", reply_markup=main_menu_kb)
+    user_context.pop(user_id, None)
+    await start(callback.message)
+    await callback.answer()
+
+@dp.callback_query(F.data == "view_schedule")
+async def view_schedule(callback: types.CallbackQuery):
+    await send_user_schedule(callback.message, callback.from_user.id)
+    await callback.answer()
+
+@dp.callback_query(F.data.startswith("user_cancel:"))
+async def user_cancel(callback: types.CallbackQuery):
+    user_id = callback.from_user.id
+    prefix = "user_cancel:"
+    rest = callback.data[len(prefix):]
+    date_s, time_s = rest.split(":", 1)
+    data = load_data()
+    found = next((item for item in data["schedule"] if
+                  item["date"]==date_s and item["time"]==time_s and item.get("user_id")==user_id and item.get("status")!="отменено"), None)
+    if not found:
+        await callback.message.answer("Запись не найдена.", reply_markup=main_menu_kb)
+        await callback.answer()
+        return
+    found["status"] = "отменено"
+    save_data(data)
+    await callback.message.answer(f"✅ Ваша запись {date_s} {time_s} отменена! Все получат уведомление о свободном времени.", reply_markup=main_menu_kb)
+    all_users = set(item["user_id"] for item in data["schedule"]) | {user_id}
+    for uid in all_users:
+        if uid != user_id:
+            try:
+                await bot.send_message(
+                    uid,
+                    f"🔔 Освободилось время занятий!\nДата: {date_s}\nВремя: {time_s}\nМожете записаться!"
+                )
+            except Exception:
+                pass
+    await start(callback.message)
+    await callback.answer()
+
+# ... ваш остальной код — админ-панель, напоминания и прочее не изменяется ...
+
+async def auto_update_code():
+    current_file = sys.argv[0]
+    last_hash = None
+    print("Проверка обновлений с GitHub активна!")
+    while True:
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(GITHUB_RAW_URL) as resp:
+                    if resp.status == 200:
+                        remote_code = await resp.text()
+                        remote_hash = hash(remote_code)
+                        if last_hash is None:
+                            last_hash = remote_hash
+                        elif remote_hash != last_hash:
+                            print("❗Обнаружено обновление кода на GitHub!")
+                            with open(current_file, "w", encoding="utf-8") as f:
+                                f.write(remote_code)
+                            print("Код обновлён. Перезапуск...")
+                            os.execv(sys.executable, [sys.executable] + sys.argv)
+                            return
+        except Exception as e:
+            print("Ошибка проверки обновления:", e)
+        await asyncio.sleep(60)
+
+async def send_reminders():
+    while True:
+        now = datetime.now()
+        data = load_data()
+        for item in data["schedule"]:
+            if item.get("status") == "отменено":
+                continue
+            session_time = safe_datetime(item["date"], item["time"])
+            if session_time:
+                if abs((session_time - now).total_seconds() - 86400) < 60:
+                    try:
+                        await bot.send_message(
+                            item["user_id"],
+                            f"🔔 Напоминание: занятие завтра в {item['time']} ({item['date']})"
+                        )
+                    except Exception:
+                        pass
+                if 0 < (session_time - now).total_seconds() <= 1200:
+                    try:
+                        await bot.send_message(
+                            item["user_id"],
+                            f"⏰ Напоминание: занятие через 20 минут!"
+                        )
+                    except Exception:
+                        pass
+        await asyncio.sleep(60)
+
+async def main():
+    print("Бот стартует.")
+    asyncio.create_task(send_reminders())
+    asyncio.create_task(auto_update_code())
+    await dp.start_polling(bot)
+
+if __name__ == "__main__":
+    print("=== Новый запуск DRIVE_BOT ===")
+    asyncio.run(main())
