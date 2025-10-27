@@ -89,6 +89,7 @@ def week_limit(user_id, new_date):
         and item.get("status") != "отменено"
     )
 
+# ====== ФУНКЦИИ-КОМПОНЕНТЫ ДЛЯ ПОВТОРНОГО ИСПОЛЬЗОВАНИЯ ======
 async def send_user_schedule(message: types.Message, user_id: int):
     data = load_data()
     now = datetime.now()
@@ -109,7 +110,7 @@ async def send_user_schedule(message: types.Message, user_id: int):
     if not text:
         text = "У вас нет записей на ближайшее время."
     keyboard = InlineKeyboardMarkup(inline_keyboard=builder) if builder else None
-    await message.answer(text, reply_markup=keyboard if keyboard else None)
+    await message.answer(text, reply_markup=keyboard if keyboard else None)  # <--- кнопок в чате нет
 
 async def start_add_record_flow(message: types.Message):
     user_id = message.from_user.id
@@ -132,9 +133,10 @@ async def start_add_record_flow(message: types.Message):
 
 @dp.callback_query(F.data == "user_over_limit")
 async def user_over_limit(callback: types.CallbackQuery):
-    await callback.message.answer("⛔ Вы уже записаны 2 раза за 7 дней, запись на выбранные дни недели недоступна. Попробуйте выбрать день следующей недели!")
+    await callback.message.answer("⛔ Вы уже записаны 2 раза за 7 дней, запись на выбранные дни данной недели недоступна. Попробуйте выбрать день следующей недели!")
     await callback.answer()
 
+# ========== ОБРАБОТЧИКИ КОМАНДЫ /start ==========
 @dp.message(Command("start"))
 async def start(message: types.Message):
     buttons = [
@@ -147,10 +149,11 @@ async def start(message: types.Message):
     keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
     await message.answer(
         "👋 Привет! Я бот автоинструктора. Можешь посмотреть расписание и записаться на занятие.",
-        reply_markup=main_menu_kb
+        reply_markup=main_menu_kb  # ReplyKeyboardMarkup - ТОЛЬКО ТУТ
     )
     await message.answer("Меню управления:", reply_markup=keyboard)
 
+# ========== ГЛАВНОЕ МЕНЮ И ОБРАБОТКА ВВОДА ==========
 @dp.message()
 async def handler_menu_and_input(message: types.Message):
     text = message.text.strip()
@@ -165,6 +168,7 @@ async def handler_menu_and_input(message: types.Message):
         return
     await process_name_or_address(message)
 
+# ====== ОБРАБОТЧИКИ INLINE-КНОПОК (callback_query) =======
 @dp.callback_query(F.data == "add_record")
 async def add_record(callback: types.CallbackQuery):
     await start_add_record_flow(callback.message)
@@ -202,7 +206,6 @@ async def busy_time(callback: types.CallbackQuery):
     await callback.message.answer("Это время уже занято.")
     await callback.answer()
 
-# Новый блок: автоматическое использование прошлого адреса и возможность изменить его
 @dp.callback_query(F.data.startswith("select_time:"))
 async def select_time_write_name(callback: types.CallbackQuery):
     selected_time = callback.data[len('select_time:'):].strip()
@@ -213,41 +216,14 @@ async def select_time_write_name(callback: types.CallbackQuery):
         await callback.message.answer("Ошибка: некорректное время. Обновите меню!")
         return
     user_context[user_id]["time"] = selected_time
-    info = users_info.get(str(user_id))
-    if info:  # Есть данные - показать адрес и предложить оставить или изменить
+    if str(user_id) in users_info:
         ctx = user_context[user_id]
-        ctx["surname"] = info["surname"]
-        ctx["name"] = info["name"]
-        ctx["address"] = info.get("address", "")
+        ctx["surname"] = users_info[str(user_id)]["surname"]
+        ctx["name"] = users_info[str(user_id)]["name"]
         user_context[user_id] = ctx
-        kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text=f"✅ Оставить адрес: {ctx['address']}", callback_data="use_prev_address")],
-            [InlineKeyboardButton(text="✏️ Ввести новый адрес", callback_data="enter_new_address")]
-        ])
-        await callback.message.answer(
-            f"ФИО: {ctx['surname']} {ctx['name']}\nТекущий сохранённый адрес: {ctx['address']}\nХотите его оставить или указать новый?",
-            reply_markup=kb
-        )
-    else:  # Нет данных — ввести ФИО
+        await callback.message.answer("📍 Введите адрес, куда подъехать:")
+    else:
         await callback.message.answer("👤 Введите фамилию и имя через пробел (например: Иванов Иван)")
-    await callback.answer()
-
-@dp.callback_query(F.data == "use_prev_address")
-async def use_prev_address(callback: types.CallbackQuery):
-    user_id = callback.from_user.id
-    ctx = user_context[user_id]
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="✅ Подтвердить запись", callback_data="confirm_record")]
-    ])
-    await callback.message.answer(
-       f"Записать на {ctx['date']} {ctx['time']}\nФИО: {ctx['surname']} {ctx['name']}\nАдрес: {ctx['address']}\nНажмите «Подтвердить запись».",
-       reply_markup=kb)
-    await callback.answer()
-
-@dp.callback_query(F.data == "enter_new_address")
-async def enter_new_address(callback: types.CallbackQuery):
-    user_id = callback.from_user.id
-    await callback.message.answer("📍 Введите новый адрес, куда подъехать:")
     await callback.answer()
 
 async def process_name_or_address(message: types.Message):
@@ -267,19 +243,12 @@ async def process_name_or_address(message: types.Message):
     if ctx.get("date") and ctx.get("time") and ctx.get("name") and "address" not in ctx:
         ctx["address"] = message.text.strip()
         user_context[user_id] = ctx
-        # Сохраняем адрес для будущих записей
-        info = users_info.get(str(user_id), {})
-        info["surname"] = ctx["surname"]
-        info["name"] = ctx["name"]
-        info["address"] = ctx["address"]
-        users_info[str(user_id)] = info
-        save_users_info(users_info)
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="✅ Подтвердить запись", callback_data="confirm_record")]
         ])
         await message.answer(
-            f"Записать на {ctx['date']} {ctx['time']}\nФИО: {ctx['surname']} {ctx['name']}\nАдрес: {ctx['address']}\nНажмите «Подтвердить запись».",
-            reply_markup=kb)
+           f"Записать на {ctx['date']} {ctx['time']}\nФИО: {ctx['surname']} {ctx['name']}\nАдрес: {ctx['address']}\nНажмите «Подтвердить запись».",
+           reply_markup=kb)
         return
 
 @dp.callback_query(F.data == "confirm_record")
