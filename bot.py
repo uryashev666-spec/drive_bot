@@ -23,6 +23,7 @@ bot = Bot(token=TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher()
 user_context = {}
 
+# Главное меню (ReplyKeyboardMarkup)
 main_menu_kb = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="📅 Моё расписание")],
@@ -88,6 +89,44 @@ def week_limit(user_id, new_date):
         and item.get("status") != "отменено"
     )
 
+# ====== ФУНКЦИИ-КОМПОНЕНТЫ ДЛЯ ПОВТОРНОГО ИСПОЛЬЗОВАНИЯ ======
+async def send_user_schedule(message: types.Message, user_id: int):
+    data = load_data()
+    now = datetime.now()
+    my_records = [
+        item for item in data["schedule"]
+        if item.get("user_id") == user_id and item.get("status") != "отменено"
+           and safe_datetime(item['date'], item['time']) and safe_datetime(item['date'], item['time']) > now
+    ]
+    my_records.sort(key=lambda item: safe_datetime(item['date'], item['time']) or datetime.max)
+    text = ""
+    builder = []
+    for idx, item in enumerate(my_records):
+        text += f"🟢 Моя запись {idx+1}:\nДата: {item['date']}\nВремя: {item['time']}\nАдрес: {item['address']}\n"
+        builder.append([InlineKeyboardButton(
+            text=f"❌ Отменить {item['date']} {item['time']}",
+            callback_data=f"user_cancel:{item['date']}:{item['time']}"
+        )])
+    if not text:
+        text = "У вас нет записей на ближайшее время."
+    keyboard = InlineKeyboardMarkup(inline_keyboard=builder) if builder else None
+    await message.answer(text, reply_markup=keyboard if keyboard else main_menu_kb)
+
+async def start_add_record_flow(message: types.Message):
+    user_id = message.from_user.id
+    user_context[user_id] = {}
+    data = load_data()
+    builder = []
+    for day_name, day_date in get_workdays(10):
+        busy = any(item["date"] == day_date and item["user_id"] == user_id and item.get("status") != "отменено"
+                   for item in data["schedule"])
+        text_btn = f"🚫 {day_name}, {day_date}" if busy else f"{day_name}, {day_date}"
+        cdata = "user_busy_day" if busy else f"select_day:{day_date}"
+        builder.append([InlineKeyboardButton(text=text_btn, callback_data=cdata)])
+    keyboard = InlineKeyboardMarkup(inline_keyboard=builder)
+    await message.answer("📅 Выберите день:", reply_markup=keyboard)
+
+# ========== ОБРАБОТЧИКИ КОМАНДЫ /start ==========
 @dp.message(Command("start"))
 async def start(message: types.Message):
     buttons = [
@@ -104,14 +143,15 @@ async def start(message: types.Message):
     )
     await message.answer("Меню управления:", reply_markup=keyboard)
 
+# ========== ГЛАВНОЕ МЕНЮ И ОБРАБОТКА ВВОДА ==========
 @dp.message()
 async def handler_menu_and_input(message: types.Message):
     text = message.text.strip()
     if text == "📅 Моё расписание":
-        await view_schedule(types.CallbackQuery(message=message, from_user=message.from_user))
+        await send_user_schedule(message, message.from_user.id)
         return
     elif text == "✏️ Записаться":
-        await add_record(types.CallbackQuery(message=message, from_user=message.from_user))
+        await start_add_record_flow(message)
         return
     elif text == "💬 Инструктор":
         await message.answer("Вы можете написать инструктору: " + TELEGRAM_LINK)
@@ -119,20 +159,10 @@ async def handler_menu_and_input(message: types.Message):
     # Всё остальное: ФИО, адрес, старый ввод
     await process_name_or_address(message)
 
+# ====== ОБРАБОТЧИКИ INLINE-КНОПОК (callback_query) =======
 @dp.callback_query(F.data == "add_record")
 async def add_record(callback: types.CallbackQuery):
-    user_id = callback.from_user.id
-    user_context[user_id] = {}
-    data = load_data()
-    builder = []
-    for day_name, day_date in get_workdays(10):
-        busy = any(item["date"] == day_date and item["user_id"] == user_id and item.get("status") != "отменено"
-                   for item in data["schedule"])
-        text = f"🚫 {day_name}, {day_date}" if busy else f"{day_name}, {day_date}"
-        cdata = "user_busy_day" if busy else f"select_day:{day_date}"
-        builder.append([InlineKeyboardButton(text=text, callback_data=cdata)])
-    keyboard = InlineKeyboardMarkup(inline_keyboard=builder)
-    await callback.message.answer("📅 Выберите день:", reply_markup=keyboard)
+    await start_add_record_flow(callback.message)
     await callback.answer()
 
 @dp.callback_query(F.data == "user_busy_day")
@@ -208,249 +238,4 @@ async def process_name_or_address(message: types.Message):
             [InlineKeyboardButton(text="✅ Подтвердить запись", callback_data="confirm_record")]
         ])
         await message.answer(
-           f"Записать на {ctx['date']} {ctx['time']}\nФИО: {ctx['surname']} {ctx['name']}\nАдрес: {ctx['address']}\nНажмите «Подтвердить запись».",
-           reply_markup=kb)
-        return
-
-@dp.callback_query(F.data == "confirm_record")
-async def confirm_record(callback: types.CallbackQuery):
-    user_id = callback.from_user.id
-    ctx = user_context.get(user_id, {})
-    if not (ctx.get("date") and ctx.get("time") and ctx.get("name") and ctx.get("address")):
-        await callback.message.answer("Ошибка: не хватает данных для записи.", reply_markup=main_menu_kb)
-        await callback.answer()
-        return
-    week_count = week_limit(user_id, ctx["date"])
-    if week_count >= 2:
-        await callback.message.answer("Лимит: не более двух занятий для ученика за любые 7 дней подряд.", reply_markup=main_menu_kb)
-        await callback.answer()
-        return
-    data = load_data()
-    data["schedule"].append({
-        "date": ctx["date"],
-        "time": ctx["time"],
-        "name": ctx["name"],
-        "surname": ctx["surname"],
-        "address": ctx["address"],
-        "user_id": user_id
-    })
-    save_data(data)
-    card_text = (
-        f"🚗 <b>Новая запись!</b>\n"
-        f"Дата: <b>{ctx['date']}</b>\n"
-        f"Время: <b>{ctx['time']}</b>\n"
-        f"ФИО: <b>{ctx['surname']} {ctx['name']}</b>\n"
-        f"Адрес: <b>{ctx['address']}</b>"
-    )
-    try:
-        await bot.send_message(YOUR_TELEGRAM_ID, card_text, parse_mode="HTML")
-    except Exception:
-        pass
-    await callback.message.answer("✅ Запись подтверждена и сохранена!", reply_markup=main_menu_kb)
-    user_context.pop(user_id, None)
-    await start(callback.message)
-    await callback.answer()
-
-@dp.callback_query(F.data == "view_schedule")
-async def view_schedule(callback: types.CallbackQuery):
-    data = load_data()
-    now = datetime.now()
-    my_id = callback.from_user.id
-    my_records = [
-        item for item in data["schedule"]
-        if item.get("user_id") == my_id and item.get("status") != "отменено"
-           and safe_datetime(item['date'], item['time']) and safe_datetime(item['date'], item['time']) > now
-    ]
-    my_records.sort(key=lambda item: safe_datetime(item['date'], item['time']) or datetime.max)
-    text = ""
-    builder = []
-    for idx, item in enumerate(my_records):
-        text += f"🟢 Моя запись {idx+1}:\nДата: {item['date']}\nВремя: {item['time']}\nАдрес: {item['address']}\n"
-        builder.append([InlineKeyboardButton(
-            text=f"❌ Отменить {item['date']} {item['time']}",
-            callback_data=f"user_cancel:{item['date']}:{item['time']}"
-        )])
-    if not text:
-        text = "У вас нет записей на ближайшее время."
-    keyboard = InlineKeyboardMarkup(inline_keyboard=builder)
-    await callback.message.answer(text, reply_markup=keyboard)
-    await callback.answer()
-
-@dp.callback_query(F.data.startswith("user_cancel:"))
-async def user_cancel(callback: types.CallbackQuery):
-    user_id = callback.from_user.id
-    prefix = "user_cancel:"
-    rest = callback.data[len(prefix):]
-    date_s, time_s = rest.split(":", 1)
-    data = load_data()
-    found = next((item for item in data["schedule"] if
-                  item["date"]==date_s and item["time"]==time_s and item.get("user_id")==user_id and item.get("status")!="отменено"), None)
-    if not found:
-        await callback.message.answer("Запись не найдена.", reply_markup=main_menu_kb)
-        await callback.answer()
-        return
-    found["status"] = "отменено"
-    save_data(data)
-    await callback.message.answer(f"✅ Ваша запись {date_s} {time_s} отменена! Все получат уведомление о свободном времени.", reply_markup=main_menu_kb)
-    all_users = set(item["user_id"] for item in data["schedule"]) | {user_id}
-    for uid in all_users:
-        if uid != user_id:
-            try:
-                await bot.send_message(
-                    uid,
-                    f"🔔 Освободилось время занятий!\nДата: {date_s}\nВремя: {time_s}\nМожете записаться!"
-                )
-            except Exception:
-                pass
-    await start(callback.message)
-    await callback.answer()
-
-# -------- Админ-панель и оставшиеся функции сохраняются по вашему оригиналу --------
-@dp.callback_query(F.data == "admin_panel")
-async def admin_panel(callback: types.CallbackQuery):
-    if callback.from_user.id != YOUR_TELEGRAM_ID:
-        await callback.message.answer('⛔ Только для администратора!', reply_markup=main_menu_kb)
-        await callback.answer()
-        return
-    data = load_data()
-    now = datetime.now()
-    user_slots = [
-        item for item in data["schedule"]
-        if item.get("status") != "отменено"
-           and safe_datetime(item["date"], item["time"])
-           and safe_datetime(item["date"], item["time"]) > now
-    ]
-    await callback.message.answer("<b>АДМИНИСТРАТОР: Управление занятиями</b>", parse_mode="HTML", reply_markup=main_menu_kb)
-    for idx, slot in enumerate(user_slots, 1):
-        day = slot["date"]
-        time = slot["time"]
-        uid = slot["user_id"]
-        name = slot.get("surname", "") + " " + slot.get("name", "")
-        address = slot.get("address", "")
-        text = f"{idx}. {day} {time} — {name}, {address}"
-        kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="Освободить", callback_data=f"admin_cancel_slot:{day}:{time}:{uid}:free"),
-             InlineKeyboardButton(text="Закрыть", callback_data=f"admin_cancel_slot:{day}:{time}:{uid}:nofree")]
-        ])
-        await callback.message.answer(text, reply_markup=kb)
-    upcoming_days = sorted(set(slot["date"] for slot in user_slots))
-    if upcoming_days:
-        kb_days = InlineKeyboardMarkup(
-            inline_keyboard=[
-                [InlineKeyboardButton(text=f"❌ Закрыть все занятия на {day}", callback_data=f"admin_cancel_day_close:{day}")]
-                for day in upcoming_days
-            ]
-        )
-        await callback.message.answer("Закрытие всех занятий на день:", reply_markup=kb_days)
-    await callback.answer()
-
-@dp.callback_query(F.data.startswith("admin_cancel_slot:"))
-async def admin_cancel_slot(callback: types.CallbackQuery):
-    prefix = "admin_cancel_slot:"
-    rest = callback.data[len(prefix):]
-    parts = rest.rsplit(":", 2)
-    day_time = parts[0]
-    cancel_id = parts[1]
-    cancel_type = parts[2]
-    day, slot_time = day_time.split(":", 1)
-    slot_time = slot_time.strip()
-    data = load_data()
-    slot = next((item for item in data["schedule"] if item["date"] == day and item["time"].strip() == slot_time and str(item["user_id"]) == cancel_id and item.get("status") != "отменено"), None)
-    if not slot:
-        await callback.message.answer("Слот не найден.", reply_markup=main_menu_kb)
-        await callback.answer()
-        return
-    slot["status"] = "отменено"
-    save_data(data)
-    try:
-        if cancel_type == "free":
-            await bot.send_message(int(cancel_id), f"⛔ Ваше занятие {day} {slot_time} отменено, слот освобожден для других учеников.")
-            await callback.message.answer("Слот отменён и освобождён (станет доступен другим).", reply_markup=main_menu_kb)
-        else:
-            await bot.send_message(int(cancel_id), f"⛔ Занятие отменено в связи с технической необходимостью")
-            await callback.message.answer("Слот отменён и закрыт (для других не будет доступен).", reply_markup=main_menu_kb)
-    except Exception:
-        pass
-    await callback.answer()
-
-@dp.callback_query(F.data.startswith("admin_cancel_day_close:"))
-async def admin_cancel_day_close(callback: types.CallbackQuery):
-    _, day = callback.data.split(":")
-    data = load_data()
-    cancelled = 0
-    for slot in data["schedule"]:
-        if slot.get("date") == day and slot.get("status") != "отменено":
-            slot["status"] = "отменено"
-            cancelled += 1
-            try:
-                await bot.send_message(
-                    slot["user_id"],
-                    "⛔ Занятие отменено в связи с технической необходимостью"
-                )
-            except Exception:
-                pass
-    save_data(data)
-    await callback.message.answer(f"❌ Все занятия на {day} отменены и слоты закрыты. Сообщение отправлено {cancelled} ученикам.", reply_markup=main_menu_kb)
-    await callback.answer()
-
-
-async def auto_update_code():
-    current_file = sys.argv[0]
-    last_hash = None
-    print("Проверка обновлений с GitHub активна!")
-    while True:
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(GITHUB_RAW_URL) as resp:
-                    if resp.status == 200:
-                        remote_code = await resp.text()
-                        remote_hash = hash(remote_code)
-                        if last_hash is None:
-                            last_hash = remote_hash
-                        elif remote_hash != last_hash:
-                            print("❗Обнаружено обновление кода на GitHub!")
-                            with open(current_file, "w", encoding="utf-8") as f:
-                                f.write(remote_code)
-                            print("Код обновлён. Перезапуск...")
-                            os.execv(sys.executable, [sys.executable] + sys.argv)
-                            return
-        except Exception as e:
-            print("Ошибка проверки обновления:", e)
-        await asyncio.sleep(60)
-
-async def send_reminders():
-    while True:
-        now = datetime.now()
-        data = load_data()
-        for item in data["schedule"]:
-            if item.get("status") == "отменено":
-                continue
-            session_time = safe_datetime(item["date"], item["time"])
-            if session_time:
-                if abs((session_time - now).total_seconds() - 86400) < 60:
-                    try:
-                        await bot.send_message(
-                            item["user_id"],
-                            f"🔔 Напоминание: занятие завтра в {item['time']} ({item['date']})"
-                        )
-                    except Exception:
-                        pass
-                if 0 < (session_time - now).total_seconds() <= 1200:
-                    try:
-                        await bot.send_message(
-                            item["user_id"],
-                            f"⏰ Напоминание: занятие через 20 минут!"
-                        )
-                    except Exception:
-                        pass
-        await asyncio.sleep(60)
-
-async def main():
-    print("Бот стартует.")
-    asyncio.create_task(send_reminders())
-    asyncio.create_task(auto_update_code())
-    await dp.start_polling(bot)
-
-if __name__ == "__main__":
-    print("=== Новый запуск DRIVE_BOT ===")
-    asyncio.run(main())
+           f"Записать на {ctx['date']} {ctx['time']}\nФИО: {ctx['surname']} {ctx['name']
