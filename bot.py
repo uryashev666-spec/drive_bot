@@ -159,8 +159,7 @@ async def select_time(callback: types.CallbackQuery):
         cdata = "busy" if busy else f"select_time:{t}"
         builder.append([InlineKeyboardButton(text=text, callback_data=cdata)])
     keyboard = InlineKeyboardMarkup(inline_keyboard=builder)
-    await callback.message.answer(f"🕒 Дата выбрана: {day_date}
-Выберите время занятия:", reply_markup=keyboard)
+    await callback.message.answer(f"🕒 Дата выбрана: {day_date}\nВыберите время занятия:", reply_markup=keyboard)
     await callback.answer()
 
 @dp.callback_query(F.data == "busy")
@@ -209,10 +208,7 @@ async def process_name_or_address(message: types.Message):
             [InlineKeyboardButton(text="✅ Подтвердить запись", callback_data="confirm_record")]
         ])
         await message.answer(
-           f"Записать на {ctx['date']} {ctx['time']}
-ФИО: {ctx['surname']} {ctx['name']}
-Адрес: {ctx['address']}
-Нажмите «Подтвердить запись».",
+           f"Записать на {ctx['date']} {ctx['time']}\nФИО: {ctx['surname']} {ctx['name']}\nАдрес: {ctx['address']}\nНажмите «Подтвердить запись».",
            reply_markup=kb)
         return
 
@@ -240,14 +236,10 @@ async def confirm_record(callback: types.CallbackQuery):
     })
     save_data(data)
     card_text = (
-        f"🚗 <b>Новая запись!</b>
-"
-        f"Дата: <b>{ctx['date']}</b>
-"
-        f"Время: <b>{ctx['time']}</b>
-"
-        f"ФИО: <b>{ctx['surname']} {ctx['name']}</b>
-"
+        f"🚗 <b>Новая запись!</b>\n"
+        f"Дата: <b>{ctx['date']}</b>\n"
+        f"Время: <b>{ctx['time']}</b>\n"
+        f"ФИО: <b>{ctx['surname']} {ctx['name']}</b>\n"
         f"Адрес: <b>{ctx['address']}</b>"
     )
     try:
@@ -273,11 +265,7 @@ async def view_schedule(callback: types.CallbackQuery):
     text = ""
     builder = []
     for idx, item in enumerate(my_records):
-        text += f"🟢 Моя запись {idx+1}:
-Дата: {item['date']}
-Время: {item['time']}
-Адрес: {item['address']}
-"
+        text += f"🟢 Моя запись {idx+1}:\nДата: {item['date']}\nВремя: {item['time']}\nАдрес: {item['address']}\n"
         builder.append([InlineKeyboardButton(
             text=f"❌ Отменить {item['date']} {item['time']}",
             callback_data=f"user_cancel:{item['date']}:{item['time']}"
@@ -310,10 +298,7 @@ async def user_cancel(callback: types.CallbackQuery):
             try:
                 await bot.send_message(
                     uid,
-                    f"🔔 Освободилось время занятий!
-Дата: {date_s}
-Время: {time_s}
-Можете записаться!"
+                    f"🔔 Освободилось время занятий!\nДата: {date_s}\nВремя: {time_s}\nМожете записаться!"
                 )
             except Exception:
                 pass
