@@ -118,13 +118,25 @@ async def start_add_record_flow(message: types.Message):
     data = load_data()
     builder = []
     for day_name, day_date in get_workdays(10):
-        busy = any(item["date"] == day_date and item["user_id"] == user_id and item.get("status") != "отменено"
-                   for item in data["schedule"])
-        text_btn = f"🚫 {day_name}, {day_date}" if busy else f"{day_name}, {day_date}"
-        cdata = "user_busy_day" if busy else f"select_day:{day_date}"
-        builder.append([InlineKeyboardButton(text=text_btn, callback_data=cdata)])
+        # Новый: лимитируем не по дате вызова, а по дате слота!
+        week_count = week_limit(user_id, day_date)
+        if week_count >= 2:
+            # Запрет на запись – покажем как недоступный
+            text = f"🚫 {day_name}, {day_date} (лимит)"
+            cdata = "user_over_limit"
+        else:
+            busy = any(item["date"] == day_date and item["user_id"] == user_id and item.get("status") != "отменено"
+                       for item in data["schedule"])
+            text = f"🚫 {day_name}, {day_date}" if busy else f"{day_name}, {day_date}"
+            cdata = "user_busy_day" if busy else f"select_day:{day_date}"
+        builder.append([InlineKeyboardButton(text=text, callback_data=cdata)])
     keyboard = InlineKeyboardMarkup(inline_keyboard=builder)
     await message.answer("📅 Выберите день:", reply_markup=keyboard)
+
+@dp.callback_query(F.data == "user_over_limit")
+async def user_over_limit(callback: types.CallbackQuery):
+    await callback.message.answer("⛔ Вы уже записаны 2 раза за 7 дней, запись на выбранные дни данной недели недоступна. Попробуйте выбрать день следующей недели!", reply_markup=main_menu_kb)
+    await callback.answer()
 
 # ========== ОБРАБОТЧИКИ КОМАНДЫ /start ==========
 @dp.message(Command("start"))
@@ -176,7 +188,7 @@ async def select_time(callback: types.CallbackQuery):
     user_id = callback.from_user.id
     week_count = week_limit(user_id, day_date)
     if week_count >= 2:
-        await callback.message.answer("Лимит: не более двух занятий для ученика за любые 7 дней подряд.")
+        await callback.message.answer("Лимит: не более двух занятий в неделю для ученика. Запишитесь на другую неделю!", reply_markup=main_menu_kb)
         await callback.answer()
         return
     user_context[user_id] = {"date": day_date}
@@ -252,7 +264,7 @@ async def confirm_record(callback: types.CallbackQuery):
         return
     week_count = week_limit(user_id, ctx["date"])
     if week_count >= 2:
-        await callback.message.answer("Лимит: не более двух занятий для ученика за любые 7 дней подряд.", reply_markup=main_menu_kb)
+        await callback.message.answer("Лимит: не более двух занятий для ученика за семь дней подряд.", reply_markup=main_menu_kb)
         await callback.answer()
         return
     data = load_data()
@@ -315,7 +327,7 @@ async def user_cancel(callback: types.CallbackQuery):
     await start(callback.message)
     await callback.answer()
 
-# ... ваш остальной код — админ-панель, напоминания и прочее не изменяется ...
+# ... ваш остальной код — админ-панель, напоминания, автоподгрузка ...
 
 async def auto_update_code():
     current_file = sys.argv[0]
