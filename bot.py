@@ -23,17 +23,6 @@ bot = Bot(token=TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher()
 user_context = {}
 
-# Главное меню (ReplyKeyboardMarkup)
-main_menu_kb = ReplyKeyboardMarkup(
-    keyboard=[
-        [KeyboardButton(text="📅 Моё расписание")],
-        [KeyboardButton(text="✏️ Записаться")],
-        [KeyboardButton(text="💬 Инструктор")]
-    ],
-    resize_keyboard=True,
-    one_time_keyboard=False
-)
-
 def load_data():
     try:
         with open(DATA_FILE, "r", encoding="utf-8") as f:
@@ -89,7 +78,21 @@ def week_limit(user_id, new_date):
         and item.get("status") != "отменено"
     )
 
-# ====== ФУНКЦИИ-КОМПОНЕНТЫ ДЛЯ ПОВТОРНОГО ИСПОЛЬЗОВАНИЯ ======
+# Главное меню динамически формируется
+def main_menu_keyboard(user_id):
+    buttons = [
+        [KeyboardButton(text="📅 Моё расписание")],
+        [KeyboardButton(text="✏️ Записаться")],
+        [KeyboardButton(text="💬 Инструктор")]
+    ]
+    if user_id == YOUR_TELEGRAM_ID:
+        buttons.append([KeyboardButton(text="🛡 Админ-панель")])
+    return ReplyKeyboardMarkup(
+        keyboard=buttons,
+        resize_keyboard=True,
+        one_time_keyboard=False
+    )
+
 async def send_user_schedule(message: types.Message, user_id: int):
     data = load_data()
     now = datetime.now()
@@ -110,7 +113,7 @@ async def send_user_schedule(message: types.Message, user_id: int):
     if not text:
         text = "У вас нет записей на ближайшее время."
     keyboard = InlineKeyboardMarkup(inline_keyboard=builder) if builder else None
-    await message.answer(text, reply_markup=keyboard if keyboard else None)  # <--- кнопок в чате нет
+    await message.answer(text, reply_markup=keyboard if keyboard else None)
 
 async def start_add_record_flow(message: types.Message):
     user_id = message.from_user.id
@@ -136,24 +139,13 @@ async def user_over_limit(callback: types.CallbackQuery):
     await callback.message.answer("⛔ Вы уже записаны 2 раза за 7 дней, запись на выбранные дни данной недели недоступна. Попробуйте выбрать день следующей недели!")
     await callback.answer()
 
-# ========== ОБРАБОТЧИКИ КОМАНДЫ /start ==========
 @dp.message(Command("start"))
 async def start(message: types.Message):
-    buttons = [
-        [InlineKeyboardButton(text="📅 Моё расписание", callback_data="view_schedule")],
-        [InlineKeyboardButton(text="✏️ Записаться", callback_data="add_record")],
-        [InlineKeyboardButton(text="💬 Написать инструктору", url=TELEGRAM_LINK)]
-    ]
-    if message.from_user.id == YOUR_TELEGRAM_ID:
-        buttons.insert(0, [InlineKeyboardButton(text="🛡 Админ-панель", callback_data="admin_panel")])
-    keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
     await message.answer(
         "👋 Привет! Я бот автоинструктора. Можешь посмотреть расписание и записаться на занятие.",
-        reply_markup=main_menu_kb  # ReplyKeyboardMarkup - ТОЛЬКО ТУТ
+        reply_markup=main_menu_keyboard(message.from_user.id)
     )
-    await message.answer("Меню управления:", reply_markup=keyboard)
 
-# ========== ГЛАВНОЕ МЕНЮ И ОБРАБОТКА ВВОДА ==========
 @dp.message()
 async def handler_menu_and_input(message: types.Message):
     text = message.text.strip()
@@ -166,9 +158,11 @@ async def handler_menu_and_input(message: types.Message):
     elif text == "💬 Инструктор":
         await message.answer("Вы можете написать инструктору: " + TELEGRAM_LINK)
         return
+    elif text == "🛡 Админ-панель" and message.from_user.id == YOUR_TELEGRAM_ID:
+        await message.answer("👑 Админ-панель: здесь будут ваши функции администратора.")
+        return
     await process_name_or_address(message)
 
-# ====== ОБРАБОТЧИКИ INLINE-КНОПОК (callback_query) =======
 @dp.callback_query(F.data == "add_record")
 async def add_record(callback: types.CallbackQuery):
     await start_add_record_flow(callback.message)
@@ -323,8 +317,6 @@ async def user_cancel(callback: types.CallbackQuery):
                 pass
     await start(callback.message)
     await callback.answer()
-
-# ... остальной код (admin, reminders, auto-update) не меняется ...
 
 async def auto_update_code():
     current_file = sys.argv[0]
