@@ -143,4 +143,4 @@ async def start(message: types.Message):
     buttons = [
         [InlineKeyboardButton(text="📅 Моё расписание", callback_data="view_schedule")],
         [InlineKeyboardButton(text="✏️ Записаться", callback_data="add_record")],
-        [InlineKeyboardButton(text="💬 Написать
+        [InlineKeyboardButton(text="💬 Написать инструктору", url=TELEGRAM_LINK)]
