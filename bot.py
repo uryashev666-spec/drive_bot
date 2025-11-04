@@ -129,7 +129,6 @@ async def message_handler(message: types.Message):
     if text == "🔙 Назад":
         step = user_context.get(user_id, {}).get("step")
         if step == "choose_time" or step == "choose_address":
-            # Назад к выбору дня
             data = load_data()
             days = get_workdays()
             available_days = []
@@ -149,17 +148,14 @@ async def message_handler(message: types.Message):
             await message.answer("📅 <b>Шаг 1:</b> Выберите день из доступных:", reply_markup=markup)
             return
         if step == "confirm_record":
-            # Назад к адресу
             kb = make_two_row_keyboard([], extras=["🏠 Главное меню", "🔙 Назад"])
             await message.answer("📍 Введите адрес (куда подъехать):", reply_markup=ReplyKeyboardMarkup(keyboard=kb,resize_keyboard=True))
             user_context[user_id]["step"] = "choose_address"
             return
-        # Назад к главному меню по умолчанию
         await message.answer("Главное меню", reply_markup=get_main_menu_kb(user_id))
         user_context.pop(user_id, None)
         return
 
-    # Админ-панель как раньше (оставляем)
     if text == "🛡️ Админ-панель" and user_id == YOUR_TELEGRAM_ID:
         days = get_workdays()
         days_buttons = [f"📆 {name} {date}" for name, date in days]
@@ -169,13 +165,12 @@ async def message_handler(message: types.Message):
         user_context[user_id] = {"admin_mode": True, "days": [date for _, date in days], "step": "admin_day"}
         return
 
-    # ...все админ-функции как в предыдущих версиях, не переписываю их тут для краткости...
+    # --- админ-функции как прежде, пропущены ради краткости ---
 
     if text == "📅 Моё расписание":
         await send_user_schedule(message, user_id)
         return
 
-    # Старт записи на занятие — выбор дня
     if text == "✏️ Записаться на занятие":
         data = load_data()
         days = get_workdays()
@@ -195,7 +190,6 @@ async def message_handler(message: types.Message):
         await message.answer("📅 <b>Шаг 1:</b> Выберите день из доступных:", reply_markup=markup)
         return
 
-    # Выбор времени (два ряда)
     if user_context.get(user_id, {}).get("step") == "choose_day":
         selected_day = None
         for date in user_context[user_id]["days"]:
@@ -221,7 +215,6 @@ async def message_handler(message: types.Message):
         await message.answer(f"🕒 <b>Шаг 2:</b> Выберите свободное время для {selected_day}:", reply_markup=markup)
         return
 
-    # Получение выбора времени
     if user_context.get(user_id, {}).get("step") == "choose_time":
         chosen_time = text[-5:]
         if chosen_time not in get_times():
@@ -235,8 +228,8 @@ async def message_handler(message: types.Message):
         user_context[user_id]["step"] = "choose_address"
         user_context[user_id]["time"] = chosen_time
         uid_str = str(user_id)
-        fio = users_info[uid_str]["fio"] if uid_str in users_info else None
-        address = users_info[uid_str]["address"] if uid_str in users_info else None
+        fio = users_info.get(uid_str, {}).get("fio")
+        address = users_info.get(uid_str, {}).get("address")
         if address:
             kb = make_two_row_keyboard([], extras=["🏠 Главное меню", "🔙 Назад", "✅ Оставить адрес"])
             await message.answer(f"📍 <b>Ваш адрес:</b> <u>{address}</u>\nЕсли нужно изменить — напишите новый.\nЕсли подходит — нажмите 'Оставить адрес'.", reply_markup=ReplyKeyboardMarkup(keyboard=kb,resize_keyboard=True))
@@ -245,25 +238,24 @@ async def message_handler(message: types.Message):
             await message.answer("📍 <b>Шаг 3:</b> Введите адрес (куда подъехать):", reply_markup=ReplyKeyboardMarkup(keyboard=kb,resize_keyboard=True))
         return
 
-    # Адрес из памяти или пользователь вводит новый
     if user_context.get(user_id, {}).get("step") == "choose_address":
         uid_str = str(user_id)
         if text == "✅ Оставить адрес":
-            address = users_info[uid_str]["address"]
+            address = users_info.get(uid_str, {}).get("address")
         else:
             address = text.strip()
             users_info[uid_str] = users_info.get(uid_str, {})
             users_info[uid_str]["address"] = address
             save_users_info(users_info)
-        # ФИО всегда тянется из users_info, если есть
-        if "fio" not in users_info[uid_str]:
+        fio = users_info.get(uid_str, {}).get("fio")
+        if not fio:
             kb = make_two_row_keyboard([], extras=["🏠 Главное меню", "🔙 Назад"])
             await message.answer("👤 <b>Введите фамилию и имя (пример: Иванов Иван)</b>", reply_markup=ReplyKeyboardMarkup(keyboard=kb,resize_keyboard=True))
             user_context[user_id]["step"] = "choose_fio"
             return
         else:
             user_context[user_id]["address"] = address
-            user_context[user_id]["fio"] = users_info[uid_str]["fio"]
+            user_context[user_id]["fio"] = fio
             user_context[user_id]["step"] = "confirm_record"
             kb = make_two_row_keyboard([], extras=["✅ Подтвердить запись", "🔙 Назад", "🏠 Главное меню"])
             await send_record_confirmation(message, user_id, kb)
@@ -276,22 +268,24 @@ async def message_handler(message: types.Message):
         users_info[uid_str]["fio"] = fio
         save_users_info(users_info)
         user_context[user_id]["fio"] = fio
-        user_context[user_id]["address"] = users_info[uid_str]["address"]
+        user_context[user_id]["address"] = users_info.get(uid_str, {}).get("address")
         user_context[user_id]["step"] = "confirm_record"
         kb = make_two_row_keyboard([], extras=["✅ Подтвердить запись", "🔙 Назад", "🏠 Главное меню"])
         await send_record_confirmation(message, user_id, kb)
         return
 
-    # Подтверждение записи
     if user_context.get(user_id, {}).get("step") == "confirm_record":
         if text == "✅ Подтвердить запись":
             ctx = user_context[user_id]
             data = load_data()
+            fio_words = ctx.get("fio", "").split()
+            surname = fio_words[0] if len(fio_words) >= 1 else ""
+            name = fio_words[1] if len(fio_words) >= 2 else ""
             data["schedule"].append({
                 "date": ctx["date"],
                 "time": ctx["time"],
-                "name": ctx["fio"].split()[1] if len(ctx["fio"].split()) > 1 else "",
-                "surname": ctx["fio"].split()[0] if ctx["fio"].split() else "",
+                "name": name,
+                "surname": surname,
                 "address": ctx["address"],
                 "user_id": user_id
             })
@@ -330,13 +324,12 @@ async def send_record_confirmation(message, user_id, kb):
         f"❕ <b>Проверьте все данные!</b>\n"
         f"📆 <b>Дата:</b> {ctx['date']}\n"
         f"🕒 <b>Время:</b> {ctx['time']}\n"
-        f"👤 <b>ФИО:</b> {ctx['fio']}\n"
+        f"👤 <b>ФИО:</b> {ctx.get('fio','')}\n"
         f"📍 <b>Адрес:</b> {ctx['address']}\n\n"
         f"Если всё правильно — подтвердите!"
     )
     await message.answer(msg, reply_markup=ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True))
 
-# --- автообновления и напоминания как раньше ---
 async def auto_update_code():
     current_file = sys.argv[0]
     last_hash = None
