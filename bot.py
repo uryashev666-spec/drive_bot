@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.enums import ParseMode
 from aiogram.client.default import DefaultBotProperties
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
 from aiogram.filters import Command
 
 TOKEN = "7818982442:AAGY-DDMsuvhLg0-Ec1ds43SkAmCltR88cI"
@@ -29,7 +29,7 @@ def get_main_menu_kb(user_id):
         [KeyboardButton(text="💬 Написать инструктору")]
     ]
     if user_id == YOUR_TELEGRAM_ID:
-        buttons.insert(0, [KeyboardButton(text="🛡 Админ-панель")])
+        buttons.insert(0, [KeyboardButton(text="🛡️ Админ-панель")])
     return ReplyKeyboardMarkup(
         keyboard=buttons,
         resize_keyboard=True,
@@ -48,13 +48,14 @@ def save_data(data):
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 def get_workdays(count=14):
-    weekdays_ru = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница"]
+    weekdays_ru = ["Пн", "Вт", "Ср", "Чт", "Пт"]
     today = datetime.today()
     days = []
     current = today + timedelta(days=1)
     while len(days) < count:
         if current.weekday() < 5:
-            days.append((weekdays_ru[current.weekday()], current.strftime("%d.%m.%Y")))
+            d = current.strftime("%d.%m.%Y")
+            days.append((weekdays_ru[current.weekday()], d))
         current += timedelta(days=1)
     return days
 
@@ -67,23 +68,7 @@ def safe_datetime(date_s, time_s):
     except Exception:
         return None
 
-async def send_user_schedule(message: types.Message, user_id: int):
-    data = load_data()
-    now = datetime.now()
-    my_records = [
-        item for item in data["schedule"]
-        if item.get("user_id") == user_id and item.get("status") != "отменено"
-        and safe_datetime(item['date'], item['time']) and safe_datetime(item['date'], item['time']) > now
-    ]
-    my_records.sort(key=lambda item: safe_datetime(item['date'], item['time']) or datetime.max)
-    text = ""
-    for idx, item in enumerate(my_records):
-        text += f"🟢 Моя запись {idx+1}:\nДата: {item['date']}\nВремя: {item['time']}\nАдрес: {item['address']}\n"
-    if not text:
-        text = "У вас нет записей на ближайшее время."
-    await message.answer(text)
-
-def make_two_row_keyboard(button_texts):
+def make_two_row_keyboard(button_texts, extra=None):
     kb = []
     row = []
     for idx, button in enumerate(button_texts):
@@ -91,12 +76,15 @@ def make_two_row_keyboard(button_texts):
         if len(row) == 2 or idx == len(button_texts)-1:
             kb.append(row)
             row = []
+    if extra:
+        kb.append([KeyboardButton(text=extra)])
     return kb
 
 @dp.message(Command("start"))
 async def start(message: types.Message):
+    await message.answer_sticker("CAACAgIAAxkBAAEKbh1lThyrVyLsmrXO-jUCaA5wQiY8hwAC3wEAAuhn0EkuGRWbCn6wWC8E")  # Просто пример sticker_id
     await message.answer(
-        "👋 Привет! Я бот автоинструктора. Можешь посмотреть расписание и записаться на занятие.",
+        "👋 <b>Добро пожаловать!</b>\nЯ, помощник автоинструктора. Для записи пользуйтесь главным меню ⬇️",
         reply_markup=get_main_menu_kb(message.from_user.id)
     )
 
@@ -105,17 +93,22 @@ async def message_handler(message: types.Message):
     text = message.text.strip()
     user_id = message.from_user.id
 
-    # Админ-панель старт, выбор дня через меню
-    if text == "🛡 Админ-панель" and user_id == YOUR_TELEGRAM_ID:
+    # Главная клавиатура
+    if text == "🛡️ Админ-панель" and user_id == YOUR_TELEGRAM_ID:
         days = get_workdays()
-        days_buttons = [f"{name} {date}" for name, date in days]
-        kb = make_two_row_keyboard(days_buttons)
+        days_buttons = [f"📆 {name} {date}" for name, date in days]
+        kb = make_two_row_keyboard(days_buttons, extra="🏠 Главное меню")
         markup = ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
-        await message.answer("🛡 Админ-панель: выберите день для управления:", reply_markup=markup)
+        await message.answer("<b>🛡️ Админ-панель</b>\nВыберите день для управления:", reply_markup=markup)
         user_context[user_id] = {"admin_mode": True, "days": [date for _, date in days], "step": "admin_day"}
         return
 
-    # Шаг выбора дня в админке: выбран день
+    if text == "🏠 Главное меню":
+        await message.answer("Главное меню", reply_markup=get_main_menu_kb(user_id))
+        user_context.pop(user_id, None)
+        return
+
+    # Админ — шаг выбора дня
     if user_context.get(user_id, {}).get("admin_mode") and user_context[user_id].get("step") == "admin_day":
         selected_date = None
         for date in user_context[user_id]["days"]:
@@ -123,26 +116,29 @@ async def message_handler(message: types.Message):
                 selected_date = date
                 break
         if not selected_date:
-            await message.answer("Выберите день из списка на кнопках.")
+            await message.answer("Выберите день из списка!")
             return
         times = get_times()
         data = load_data()
         slot_buttons = []
         for t in times:
             slot = next((i for i in data["schedule"] if i["date"] == selected_date and i["time"] == t and i.get("status") != "отменено"), None)
-            status = slot["status"] if slot else "свободно"
-            slot_buttons.append(f"{t} ({status})")
-        # Кнопку для полной отмены дня
-        slot_buttons.append("❗ Отменить все занятия на день")
-        kb = make_two_row_keyboard(slot_buttons)
+            if slot and slot.get("status") == "заблокировано":
+                slot_buttons.append(f"⛔ {t}")
+            elif slot:
+                slot_buttons.append(f"🔴 {t}")
+            else:
+                slot_buttons.append(f"🟢 {t}")
+        kb = make_two_row_keyboard(slot_buttons, extra="❗ Отменить все на день")
         markup = ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
         user_context[user_id].update({"step": "admin_time", "admin_day": selected_date, "times": times})
-        await message.answer(f"Выберите временной слот для {selected_date} или отмените все занятия на день:", reply_markup=markup)
+        await message.answer(f"🛡️ {selected_date}\n<b>Слоты:</b>\n🟢 - свободно\n🔴 - занято\n⛔ - заблокировано",
+                            reply_markup=markup)
         return
 
-    # Шаг отмены всех занятий на день
+    # Админ — отмена всех на день
     if user_context.get(user_id, {}).get("admin_mode") and user_context[user_id].get("step") == "admin_time":
-        if "Отменить все занятия на день" in text:
+        if "Отменить все на день" in text:
             day = user_context[user_id]["admin_day"]
             data = load_data()
             cancelled_users = set()
@@ -156,33 +152,25 @@ async def message_handler(message: types.Message):
                     await bot.send_message(uid, "⛔ Занятие отменено в связи с технической необходимостью")
                 except Exception:
                     pass
-            await message.answer(f"Все занятия на {day} отменены, уведомление отправлено всем.")
-            # Вернуться к выбору дня
-            days = get_workdays()
-            days_buttons = [f"{name} {date}" for name, date in days]
-            kb = make_two_row_keyboard(days_buttons)
-            markup = ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
-            user_context[user_id].update({"step": "admin_day", "days": [date for _, date in days]})
-            await message.answer("Выберите следующий день для управления:", reply_markup=markup)
+            await message.answer(f"✅ <b>День {day} полностью отменён</b>", reply_markup=get_main_menu_kb(user_id))
+            user_context.pop(user_id, None)
             return
 
-        # Выбор временного слота
-        chosen_time = None
-        for t in user_context[user_id]["times"]:
-            if t in text:
-                chosen_time = t
-                break
-        if not chosen_time:
-            await message.answer("Выберите время из списка на кнопках.")
+        # Выбор слайда
+        icon_map = {"🟢": None, "🔴": "занято", "⛔": "заблокировано"}
+        chosen_icon = text[:2]
+        chosen_time = text[2:].strip()
+        if chosen_time not in get_times():
+            await message.answer("Выберите время из списка!")
             return
-        # Клавиатура для действия над слотом: освободить/закрыть
-        kb = make_two_row_keyboard(["❌ Освободить", "⛔ Закрыть слот", "🔙 Назад ко времени"])
+        kb = make_two_row_keyboard(["❌ Освободить", "⛔ Закрыть слот", "🔙 Назад"], extra="🏠 Главное меню")
         markup = ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
         user_context[user_id].update({"step": "admin_slot", "admin_time": chosen_time})
-        await message.answer(f"Выбран слот: {user_context[user_id]['admin_day']} {chosen_time}\nВыберите действие:", reply_markup=markup)
+        await message.answer(f"Слот: {user_context[user_id]['admin_day']} {chosen_time}\nВыберите действие:",
+                            reply_markup=markup)
         return
 
-    # Действие над слотом (освободить/закрыть)
+    # Админ — действия над слотом
     if user_context.get(user_id, {}).get("admin_mode") and user_context[user_id].get("step") == "admin_slot":
         day = user_context[user_id]["admin_day"]
         time_s = user_context[user_id]["admin_time"]
@@ -190,17 +178,17 @@ async def message_handler(message: types.Message):
         if "Освободить" in text:
             found = next((item for item in data["schedule"] if item["date"]==day and item["time"]==time_s and item.get("status")!="отменено"), None)
             if not found:
-                await message.answer("Занятие не найдено или уже свободно.")
+                await message.answer("Слот уже свободен.")
             else:
                 found["status"] = "отменено"
                 save_data(data)
                 for uid in set(x["user_id"] for x in data["schedule"]):
                     try:
-                        await bot.send_message(uid, f"🔔 Освободилось время!\nДата: {day}\nВремя: {time_s}\nМожете записаться!")
+                        await bot.send_message(uid, f"🟢 Освободилось время!\n{day} {time_s}")
                     except Exception:
                         pass
-                await message.answer(f"Слот {day} {time_s} освобожден.")
-        elif "Закрыть слот" in text:
+                await message.answer(f"🟢 Слот {day} {time_s} освобожден.")
+        elif "Закрыть" in text:
             found = next((item for item in data["schedule"] if item["date"]==day and item["time"]==time_s), None)
             if not found:
                 fake = {
@@ -218,31 +206,35 @@ async def message_handler(message: types.Message):
             save_data(data)
             for uid in set(x["user_id"] for x in data["schedule"]):
                 try:
-                    await bot.send_message(uid, f"⛔ Слот {day} {time_s} закрыт для записи (тех. причина / админ блок).")
+                    await bot.send_message(uid, f"⛔ Слот {day} {time_s} закрыт для записи!")
                 except Exception:
                     pass
-            await message.answer(f"Слот {day} {time_s} закрыт.")
-        elif "Назад" in text:
-            # Вернуться к времени
+            await message.answer(f"⛔ Слот {day} {time_s} закрыт.")
+        if "Назад" in text or "Освободить" in text or "Закрыть" in text:
+            # Вернуться к временам
             times = get_times()
-            new_buttons = []
+            data = load_data()
+            slot_buttons = []
             for t in times:
                 slot = next((i for i in data["schedule"] if i["date"] == day and i["time"] == t and i.get("status") != "отменено"), None)
-                status = slot["status"] if slot else "свободно"
-                new_buttons.append(f"{t} ({status})")
-            new_buttons.append("❗ Отменить все занятия на день")
-            kb = make_two_row_keyboard(new_buttons)
+                if slot and slot.get("status") == "заблокировано":
+                    slot_buttons.append(f"⛔ {t}")
+                elif slot:
+                    slot_buttons.append(f"🔴 {t}")
+                else:
+                    slot_buttons.append(f"🟢 {t}")
+            kb = make_two_row_keyboard(slot_buttons, extra="❗ Отменить все на день")
             markup = ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
             user_context[user_id].update({"step": "admin_time", "times": times})
-            await message.answer(f"Выберите временной слот для {day} или отмените все занятия на день:", reply_markup=markup)
+            await message.answer(f"🛡️ {day}\n<b>Слоты:</b>\n🟢 - свободно\n🔴 - занято\n⛔ - заблокировано",
+                                reply_markup=markup)
         return
 
-    # Моё расписание
     if text == "📅 Моё расписание":
         await send_user_schedule(message, user_id)
         return
 
-    # Начало записи на занятие: выбор дня (два ряда)
+    # Старт записи — выбор дня (2 ряда, с иконкой)
     if text == "✏️ Записаться на занятие":
         data = load_data()
         days = get_workdays()
@@ -255,15 +247,13 @@ async def message_handler(message: types.Message):
             )
             if busy_count < len(get_times()):
                 available_days.append((name, date))
-        days_buttons = [f"{name} {date}" for name, date in available_days]
-        kb = make_two_row_keyboard(days_buttons)
+        days_buttons = [f"📆 {name} {date}" for name, date in available_days]
+        kb = make_two_row_keyboard(days_buttons, extra="🏠 Главное меню")
         markup = ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
         user_context[user_id] = {"step": "choose_day", "days": [date for _, date in available_days]}
-        await message.answer("📅 Выберите день для занятия из свободных (две недели вперед, только рабочие дни):",
-                            reply_markup=markup)
+        await message.answer("📅 <b>Шаг 1:</b> Выберите день из доступных:", reply_markup=markup)
         return
 
-    # Выбор времени (два ряда)
     if user_context.get(user_id, {}).get("step") == "choose_day":
         selected_day = None
         for date in user_context[user_id]["days"]:
@@ -271,46 +261,46 @@ async def message_handler(message: types.Message):
                 selected_day = date
                 break
         if not selected_day:
-            await message.answer("Пожалуйста, выберите день из предложенных кнопок.")
+            await message.answer("Пожалуйста, выберите день из предложенных!")
             return
         times = get_times()
         data = load_data()
         times_buttons = []
         for t in times:
             busy = any(item["date"]==selected_day and item["time"]==t and item.get("status")!="отменено" for item in data["schedule"])
-            label = f"{t} {'🚫' if busy else ''}"
-            times_buttons.append(label if not busy else f"{t} (занято)")
-        kb = make_two_row_keyboard(times_buttons)
+            if busy:
+                times_buttons.append(f"🔴 {t} (занято)")
+            else:
+                times_buttons.append(f"🟢 {t}")
+        kb = make_two_row_keyboard(times_buttons, extra="🔙 Назад")
         markup = ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
         user_context[user_id]["step"] = "choose_time"
         user_context[user_id]["date"] = selected_day
-        await message.answer(f"Выберите время для занятия {selected_day}:", reply_markup=markup)
+        await message.answer(f"🕒 <b>Шаг 2:</b> Выберите свободное время для {selected_day}:", reply_markup=markup)
         return
 
-    # Получение выбора времени
     if user_context.get(user_id, {}).get("step") == "choose_time":
-        chosen_time = text.split()[0].strip()
+        chosen_time = text[-5:]
         if chosen_time not in get_times():
-            await message.answer("Пожалуйста, выберите время из предложенных слотов.")
+            await message.answer("Пожалуйста, выберите время из предложенных!")
             return
         date_chosen = user_context[user_id]["date"]
         busy = any(item["date"]==date_chosen and item["time"]==chosen_time and item.get("status")!="отменено" for item in load_data()["schedule"])
         if busy:
-            await message.answer("Это время уже занято. Выберите другой свободный слот.")
+            await message.answer("Это время уже занято. Выберите другой слот!")
             return
         user_context[user_id]["step"] = "write_fio"
         user_context[user_id]["time"] = chosen_time
-        await message.answer("👤 Введите фамилию и имя через пробел (например: Иванов Иван)", reply_markup=get_main_menu_kb(user_id))
+        await message.answer("👤 <b>Шаг 3:</b> Введите фамилию и имя (пример: Иванов Иван)", reply_markup=ReplyKeyboardRemove())
         return
 
-    # Получение ФИО
     if user_context.get(user_id, {}).get("step") == "write_fio":
         parts = text.strip().split(" ", 1)
         if len(parts) < 2:
-            await message.answer("Пожалуйста, напишите фамилию и имя через пробел.")
+            await message.answer("👤 Укажите фамилию и имя через пробел!")
             return
         user_context[user_id]["surname"], user_context[user_id]["name"] = parts[0], parts[1]
-        await message.answer("📍 Введите адрес, куда подъехать:")
+        await message.answer("📍 <b>Шаг 4:</b> Напишите адрес (куда подъехать):")
         user_context[user_id]["step"] = "write_address"
         return
 
@@ -327,15 +317,27 @@ async def message_handler(message: types.Message):
             "user_id": user_id
         })
         save_data(data)
-        await message.answer(f"✅ Запись подтверждена: {ctx['date']}, {ctx['time']}, {ctx['surname']} {ctx['name']}, адрес: {ctx['address']}")
+        msg = (
+            f"✅ <b>Запись подтверждена!</b>\n"
+            f"📆 <b>Дата:</b> {ctx['date']}\n"
+            f"🕒 <b>Время:</b> {ctx['time']}\n"
+            f"👤 <b>Имя:</b> {ctx['surname']} {ctx['name']}\n"
+            f"📍 <b>Адрес:</b> {ctx['address']}"
+        )
+        await message.answer(msg, reply_markup=get_main_menu_kb(user_id))
         user_context.pop(user_id, None)
         return
 
     if text == "💬 Написать инструктору":
-        await message.answer("Вы можете написать инструктору: " + TELEGRAM_LINK)
+        await message.answer("✉️ Для обращения к инструктору пишите сюда: " + TELEGRAM_LINK)
         return
 
-    await message.answer("Неизвестная команда или неправильный формат данных. Пожалуйста, используйте меню.")
+    if "Назад" in text:
+        await message.answer("🔙 Назад", reply_markup=get_main_menu_kb(user_id))
+        user_context.pop(user_id, None)
+        return
+
+    await message.answer("⚠️ Неизвестная команда или формат. Используйте меню.", reply_markup=get_main_menu_kb(user_id))
 
 async def auto_update_code():
     current_file = sys.argv[0]
