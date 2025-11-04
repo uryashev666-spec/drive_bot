@@ -82,7 +82,6 @@ def make_two_row_keyboard(button_texts, extra=None):
 
 @dp.message(Command("start"))
 async def start(message: types.Message):
-    await message.answer_sticker("CAACAgIAAxkBAAEKbh1lThyrVyLsmrXO-jUCaA5wQiY8hwAC3wEAAuhn0EkuGRWbCn6wWC8E")  # Просто пример sticker_id
     await message.answer(
         "👋 <b>Добро пожаловать!</b>\nЯ, помощник автоинструктора. Для записи пользуйтесь главным меню ⬇️",
         reply_markup=get_main_menu_kb(message.from_user.id)
@@ -93,7 +92,6 @@ async def message_handler(message: types.Message):
     text = message.text.strip()
     user_id = message.from_user.id
 
-    # Главная клавиатура
     if text == "🛡️ Админ-панель" and user_id == YOUR_TELEGRAM_ID:
         days = get_workdays()
         days_buttons = [f"📆 {name} {date}" for name, date in days]
@@ -108,7 +106,6 @@ async def message_handler(message: types.Message):
         user_context.pop(user_id, None)
         return
 
-    # Админ — шаг выбора дня
     if user_context.get(user_id, {}).get("admin_mode") and user_context[user_id].get("step") == "admin_day":
         selected_date = None
         for date in user_context[user_id]["days"]:
@@ -136,7 +133,6 @@ async def message_handler(message: types.Message):
                             reply_markup=markup)
         return
 
-    # Админ — отмена всех на день
     if user_context.get(user_id, {}).get("admin_mode") and user_context[user_id].get("step") == "admin_time":
         if "Отменить все на день" in text:
             day = user_context[user_id]["admin_day"]
@@ -156,9 +152,7 @@ async def message_handler(message: types.Message):
             user_context.pop(user_id, None)
             return
 
-        # Выбор слайда
         icon_map = {"🟢": None, "🔴": "занято", "⛔": "заблокировано"}
-        chosen_icon = text[:2]
         chosen_time = text[2:].strip()
         if chosen_time not in get_times():
             await message.answer("Выберите время из списка!")
@@ -170,7 +164,6 @@ async def message_handler(message: types.Message):
                             reply_markup=markup)
         return
 
-    # Админ — действия над слотом
     if user_context.get(user_id, {}).get("admin_mode") and user_context[user_id].get("step") == "admin_slot":
         day = user_context[user_id]["admin_day"]
         time_s = user_context[user_id]["admin_time"]
@@ -211,7 +204,6 @@ async def message_handler(message: types.Message):
                     pass
             await message.answer(f"⛔ Слот {day} {time_s} закрыт.")
         if "Назад" in text or "Освободить" in text or "Закрыть" in text:
-            # Вернуться к временам
             times = get_times()
             data = load_data()
             slot_buttons = []
@@ -234,7 +226,6 @@ async def message_handler(message: types.Message):
         await send_user_schedule(message, user_id)
         return
 
-    # Старт записи — выбор дня (2 ряда, с иконкой)
     if text == "✏️ Записаться на занятие":
         data = load_data()
         days = get_workdays()
