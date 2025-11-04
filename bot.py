@@ -80,6 +80,22 @@ def make_two_row_keyboard(button_texts, extra=None):
         kb.append([KeyboardButton(text=extra)])
     return kb
 
+async def send_user_schedule(message: types.Message, user_id: int):
+    data = load_data()
+    now = datetime.now()
+    my_records = [
+        item for item in data["schedule"]
+        if item.get("user_id") == user_id and item.get("status") != "отменено"
+        and safe_datetime(item['date'], item['time']) and safe_datetime(item['date'], item['time']) > now
+    ]
+    my_records.sort(key=lambda item: safe_datetime(item['date'], item['time']) or datetime.max)
+    text = ""
+    for idx, item in enumerate(my_records):
+        text += f"🟢 <b>Моя запись {idx+1}:</b>\n📆 {item['date']}\n🕒 {item['time']}\n📍 {item['address']}\n\n"
+    if not text:
+        text = "У вас нет записей на ближайшее время."
+    await message.answer(text)
+
 @dp.message(Command("start"))
 async def start(message: types.Message):
     await message.answer(
@@ -152,7 +168,6 @@ async def message_handler(message: types.Message):
             user_context.pop(user_id, None)
             return
 
-        icon_map = {"🟢": None, "🔴": "занято", "⛔": "заблокировано"}
         chosen_time = text[2:].strip()
         if chosen_time not in get_times():
             await message.answer("Выберите время из списка!")
