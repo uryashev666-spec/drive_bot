@@ -83,6 +83,16 @@ async def send_user_schedule(message: types.Message, user_id: int):
         text = "У вас нет записей на ближайшее время."
     await message.answer(text)
 
+def make_two_row_keyboard(button_texts):
+    kb = []
+    row = []
+    for idx, button in enumerate(button_texts):
+        row.append(KeyboardButton(text=button))
+        if len(row) == 2 or idx == len(button_texts)-1:
+            kb.append(row)
+            row = []
+    return kb
+
 @dp.message(Command("start"))
 async def start(message: types.Message):
     await message.answer(
@@ -95,95 +105,136 @@ async def message_handler(message: types.Message):
     text = message.text.strip()
     user_id = message.from_user.id
 
-    # Админ-панель
+    # Админ-панель старт, выбор дня через меню
     if text == "🛡 Админ-панель" and user_id == YOUR_TELEGRAM_ID:
         days = get_workdays()
-        reply = "🛡 Админ-панель: выберите день, чтобы отменить все занятия, либо управлять каждым слотом\n\n"
-        for name, date in days:
-            reply += f"{name} {date}\n"
-        reply += "\nНапишите дату (например: 07.11.2025) или 'отмена день:ДД.ММ.ГГГГ'\n"
-        await message.answer(reply)
-        user_context[user_id] = {"admin_mode": True, "days": [date for _, date in days]}
+        days_buttons = [f"{name} {date}" for name, date in days]
+        kb = make_two_row_keyboard(days_buttons)
+        markup = ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
+        await message.answer("🛡 Админ-панель: выберите день для управления:", reply_markup=markup)
+        user_context[user_id] = {"admin_mode": True, "days": [date for _, date in days], "step": "admin_day"}
         return
 
-    # Отмена всех занятий на день
-    if text.startswith("отмена день:") and user_id == YOUR_TELEGRAM_ID:
-        day = text.replace("отмена день:", "").strip()
-        data = load_data()
-        cancelled_users = set()
-        for item in data["schedule"]:
-            if item["date"] == day and item.get("status") != "отменено":
-                item["status"] = "отменено"
-                cancelled_users.add(item["user_id"])
-        save_data(data)
-        for uid in cancelled_users:
-            try:
-                await bot.send_message(uid, "⛔ Занятие отменено в связи с технической необходимостью")
-            except Exception:
-                pass
-        await message.answer(f"Все занятия на {day} отменены, уведомление отправлено всем.")
-        return
-
-    # Управление отдельными слотами (освободить/закрыть)
-    if user_context.get(user_id, {}).get("admin_mode") and text in user_context[user_id]["days"]:
+    # Шаг выбора дня в админке: выбран день
+    if user_context.get(user_id, {}).get("admin_mode") and user_context[user_id].get("step") == "admin_day":
+        selected_date = None
+        for date in user_context[user_id]["days"]:
+            if date in text:
+                selected_date = date
+                break
+        if not selected_date:
+            await message.answer("Выберите день из списка на кнопках.")
+            return
         times = get_times()
         data = load_data()
-        msg = f"День: {text}\nВыберите время для управления:\n"
+        slot_buttons = []
         for t in times:
-            slot = next((i for i in data["schedule"] if i["date"] == text and i["time"] == t and i.get("status") != "отменено"), None)
+            slot = next((i for i in data["schedule"] if i["date"] == selected_date and i["time"] == t and i.get("status") != "отменено"), None)
             status = slot["status"] if slot else "свободно"
-            msg += f"{t}: {'занято' if slot else 'свободно'} ({status})\n"
-        msg += "\nДля отмены занятия/освобождения слота напишите: освободить ДД.ММ.ГГГГ ХХ:ММ\n"
-        msg += "Для закрытия слота напишите: закрыть ДД.ММ.ГГГГ ХХ:ММ"
-        await message.answer(msg)
-        user_context[user_id]["admin_day"] = text
+            slot_buttons.append(f"{t} ({status})")
+        # Кнопку для полной отмены дня
+        slot_buttons.append("❗ Отменить все занятия на день")
+        kb = make_two_row_keyboard(slot_buttons)
+        markup = ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
+        user_context[user_id].update({"step": "admin_time", "admin_day": selected_date, "times": times})
+        await message.answer(f"Выберите временной слот для {selected_date} или отмените все занятия на день:", reply_markup=markup)
         return
 
-    if text.startswith("освободить ") and user_id == YOUR_TELEGRAM_ID:
-        rest = text.replace("освободить ", "")
-        date_s, time_s = rest.split()
-        data = load_data()
-        found = next((item for item in data["schedule"] if item["date"]==date_s and item["time"]==time_s and item.get("status")!="отменено"), None)
-        if not found:
-            await message.answer("Занятие не найдено или уже свободно.")
+    # Шаг отмены всех занятий на день
+    if user_context.get(user_id, {}).get("admin_mode") and user_context[user_id].get("step") == "admin_time":
+        if "Отменить все занятия на день" in text:
+            day = user_context[user_id]["admin_day"]
+            data = load_data()
+            cancelled_users = set()
+            for item in data["schedule"]:
+                if item["date"] == day and item.get("status") != "отменено":
+                    item["status"] = "отменено"
+                    cancelled_users.add(item["user_id"])
+            save_data(data)
+            for uid in cancelled_users:
+                try:
+                    await bot.send_message(uid, "⛔ Занятие отменено в связи с технической необходимостью")
+                except Exception:
+                    pass
+            await message.answer(f"Все занятия на {day} отменены, уведомление отправлено всем.")
+            # Вернуться к выбору дня
+            days = get_workdays()
+            days_buttons = [f"{name} {date}" for name, date in days]
+            kb = make_two_row_keyboard(days_buttons)
+            markup = ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
+            user_context[user_id].update({"step": "admin_day", "days": [date for _, date in days]})
+            await message.answer("Выберите следующий день для управления:", reply_markup=markup)
             return
-        found["status"] = "отменено"
-        save_data(data)
-        all_users = set(x["user_id"] for x in data["schedule"])
-        for uid in all_users:
-            try:
-                await bot.send_message(uid, f"🔔 Освободилось время занятий!\nДата: {date_s}\nВремя: {time_s}\nМожете записаться!")
-            except Exception:
-                pass
-        await message.answer(f"Слот {date_s} {time_s} освобожден, уведомление разослано.")
+
+        # Выбор временного слота
+        chosen_time = None
+        for t in user_context[user_id]["times"]:
+            if t in text:
+                chosen_time = t
+                break
+        if not chosen_time:
+            await message.answer("Выберите время из списка на кнопках.")
+            return
+        # Клавиатура для действия над слотом: освободить/закрыть
+        kb = make_two_row_keyboard(["❌ Освободить", "⛔ Закрыть слот", "🔙 Назад ко времени"])
+        markup = ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
+        user_context[user_id].update({"step": "admin_slot", "admin_time": chosen_time})
+        await message.answer(f"Выбран слот: {user_context[user_id]['admin_day']} {chosen_time}\nВыберите действие:", reply_markup=markup)
         return
 
-    if text.startswith("закрыть ") and user_id == YOUR_TELEGRAM_ID:
-        rest = text.replace("закрыть ", "")
-        date_s, time_s = rest.split()
+    # Действие над слотом (освободить/закрыть)
+    if user_context.get(user_id, {}).get("admin_mode") and user_context[user_id].get("step") == "admin_slot":
+        day = user_context[user_id]["admin_day"]
+        time_s = user_context[user_id]["admin_time"]
         data = load_data()
-        found = next((item for item in data["schedule"] if item["date"]==date_s and item["time"]==time_s), None)
-        if not found:
-            fake = {
-                "date": date_s,
-                "time": time_s,
-                "name": "-",
-                "surname": "-",
-                "address": "-",
-                "user_id": -1,
-                "status": "заблокировано"
-            }
-            data["schedule"].append(fake)
-        else:
-            found["status"] = "заблокировано"
-        save_data(data)
-        all_users = set(x["user_id"] for x in data["schedule"])
-        for uid in all_users:
-            try:
-                await bot.send_message(uid, f"⛔ Cлот {date_s} {time_s} закрыт для записи (тех. причина / админ блок).")
-            except Exception:
-                pass
-        await message.answer(f"Слот {date_s} {time_s} закрыт для записи, уведомление разослано.")
+        if "Освободить" in text:
+            found = next((item for item in data["schedule"] if item["date"]==day and item["time"]==time_s and item.get("status")!="отменено"), None)
+            if not found:
+                await message.answer("Занятие не найдено или уже свободно.")
+            else:
+                found["status"] = "отменено"
+                save_data(data)
+                for uid in set(x["user_id"] for x in data["schedule"]):
+                    try:
+                        await bot.send_message(uid, f"🔔 Освободилось время!\nДата: {day}\nВремя: {time_s}\nМожете записаться!")
+                    except Exception:
+                        pass
+                await message.answer(f"Слот {day} {time_s} освобожден.")
+        elif "Закрыть слот" in text:
+            found = next((item for item in data["schedule"] if item["date"]==day and item["time"]==time_s), None)
+            if not found:
+                fake = {
+                    "date": day,
+                    "time": time_s,
+                    "name": "-",
+                    "surname": "-",
+                    "address": "-",
+                    "user_id": -1,
+                    "status": "заблокировано"
+                }
+                data["schedule"].append(fake)
+            else:
+                found["status"] = "заблокировано"
+            save_data(data)
+            for uid in set(x["user_id"] for x in data["schedule"]):
+                try:
+                    await bot.send_message(uid, f"⛔ Слот {day} {time_s} закрыт для записи (тех. причина / админ блок).")
+                except Exception:
+                    pass
+            await message.answer(f"Слот {day} {time_s} закрыт.")
+        elif "Назад" in text:
+            # Вернуться к времени
+            times = get_times()
+            new_buttons = []
+            for t in times:
+                slot = next((i for i in data["schedule"] if i["date"] == day and i["time"] == t and i.get("status") != "отменено"), None)
+                status = slot["status"] if slot else "свободно"
+                new_buttons.append(f"{t} ({status})")
+            new_buttons.append("❗ Отменить все занятия на день")
+            kb = make_two_row_keyboard(new_buttons)
+            markup = ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
+            user_context[user_id].update({"step": "admin_time", "times": times})
+            await message.answer(f"Выберите временной слот для {day} или отмените все занятия на день:", reply_markup=markup)
         return
 
     # Моё расписание
@@ -191,7 +242,7 @@ async def message_handler(message: types.Message):
         await send_user_schedule(message, user_id)
         return
 
-    # Начало записи на занятие: выбор дня
+    # Начало записи на занятие: выбор дня (два ряда)
     if text == "✏️ Записаться на занятие":
         data = load_data()
         days = get_workdays()
@@ -204,16 +255,16 @@ async def message_handler(message: types.Message):
             )
             if busy_count < len(get_times()):
                 available_days.append((name, date))
-        kb_days = [[KeyboardButton(text=f"{name} {date}")] for name, date in available_days]
-        markup = ReplyKeyboardMarkup(keyboard=kb_days, resize_keyboard=True)
+        days_buttons = [f"{name} {date}" for name, date in available_days]
+        kb = make_two_row_keyboard(days_buttons)
+        markup = ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
         user_context[user_id] = {"step": "choose_day", "days": [date for _, date in available_days]}
         await message.answer("📅 Выберите день для занятия из свободных (две недели вперед, только рабочие дни):",
                             reply_markup=markup)
         return
 
-    # Выбор времени (reply-слоты)
+    # Выбор времени (два ряда)
     if user_context.get(user_id, {}).get("step") == "choose_day":
-        # user отправил дату, находим текстовое совпадение с кнопкой
         selected_day = None
         for date in user_context[user_id]["days"]:
             if date in text:
@@ -224,12 +275,13 @@ async def message_handler(message: types.Message):
             return
         times = get_times()
         data = load_data()
-        kb_times = []
+        times_buttons = []
         for t in times:
             busy = any(item["date"]==selected_day and item["time"]==t and item.get("status")!="отменено" for item in data["schedule"])
             label = f"{t} {'🚫' if busy else ''}"
-            kb_times.append([KeyboardButton(text=label if not busy else f"{t} (занято)")])
-        markup = ReplyKeyboardMarkup(keyboard=kb_times, resize_keyboard=True)
+            times_buttons.append(label if not busy else f"{t} (занято)")
+        kb = make_two_row_keyboard(times_buttons)
+        markup = ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
         user_context[user_id]["step"] = "choose_time"
         user_context[user_id]["date"] = selected_day
         await message.answer(f"Выберите время для занятия {selected_day}:", reply_markup=markup)
@@ -265,7 +317,6 @@ async def message_handler(message: types.Message):
     if user_context.get(user_id, {}).get("step") == "write_address":
         ctx = user_context[user_id]
         ctx["address"] = text.strip()
-        # сохраняем запись
         data = load_data()
         data["schedule"].append({
             "date": ctx["date"],
