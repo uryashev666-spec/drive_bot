@@ -144,3 +144,48 @@ async def start(message: types.Message):
         [InlineKeyboardButton(text="📅 Моё расписание", callback_data="view_schedule")],
         [InlineKeyboardButton(text="✏️ Записаться", callback_data="add_record")],
         [InlineKeyboardButton(text="💬 Написать инструктору", url=TELEGRAM_LINK)]
+    ]
+    if message.from_user.id == YOUR_TELEGRAM_ID:
+        buttons.insert(0, [InlineKeyboardButton(text="🛡 Админ-панель", callback_data="admin_panel")])
+    keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
+    await message.answer(
+        "👋 Привет! Я бот автоинструктора. Можешь посмотреть расписание и записаться на занятие.",
+        reply_markup=get_main_menu_kb(message.from_user.id)
+    )
+    await message.answer("Меню управления:", reply_markup=keyboard)
+
+@dp.message()
+async def handler_menu_and_input(message: types.Message):
+    text = message.text.strip()
+    if text == "🛡 Админ-панель" and message.from_user.id == YOUR_TELEGRAM_ID:
+        fake_callback = CallbackQuery(
+            id="admin_panel_btn",
+            from_user=message.from_user,
+            message=message,
+            data="admin_panel",
+            chat_instance="fake"
+        )
+        await admin_panel(fake_callback)
+        return
+    if text == "📅 Моё расписание":
+        await send_user_schedule(message, message.from_user.id)
+        return
+    elif text == "✏️ Записаться":
+        await start_add_record_flow(message)
+        return
+    elif text == "💬 Инструктор":
+        await message.answer("Вы можете написать инструктору: " + TELEGRAM_LINK)
+        return
+    await process_name_or_address(message)
+
+# ... Остальные обработчики — без изменений ...
+# (остальной код из предыдущего ответа полностью рабочий для 3.x)
+
+async def main():
+    print("=== Новый запуск DRIVE_BOT ===")
+    asyncio.create_task(send_reminders())
+    asyncio.create_task(auto_update_code())
+    await dp.start_polling(bot)
+
+if __name__ == "__main__":
+    asyncio.run(main())
