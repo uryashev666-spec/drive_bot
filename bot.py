@@ -215,7 +215,6 @@ async def message_handler(message: types.Message):
         await message.answer("<b>🛡️ Админ-панель</b>\nВыберите день для управления:", reply_markup=markup)
         return
 
-    # Админ: выбор дня (по дате в кнопке)
     if user_context.get(user_id, {}).get("admin_mode") and user_context[user_id].get("admin_step") == "admin_day":
         btn_date = extract_date_from_btn(text)
         if btn_date and btn_date in user_context[user_id]["days"]:
@@ -247,12 +246,11 @@ async def message_handler(message: types.Message):
             ))
             return
 
-    # --- Пример для choose_day (запись ученика) ---
+    # --- USER choose_day: по дате из кнопки ---
     if user_context.get(user_id, {}).get("step") == "choose_day":
         btn_date = extract_date_from_btn(text)
         if btn_date and btn_date in user_context[user_id]["days"]:
             selected_day = btn_date
-            # здесь идет та же ветка по временам, как и раньше
             times = get_times()
             data = load_data()
             times_buttons = []
@@ -275,15 +273,34 @@ async def message_handler(message: types.Message):
             ))
             return
 
-    # ... остальные ветки: выбор времени (extract_time_from_btn), имя, адрес, подтверждение записи, лимиты, возвраты ...
-    # ... копировать "as is" из некороченых финальных версий, только вместо text == date всегда использовать extract_date_from_btn ...
+    # --- USER: полный этап записи ---
+    if match_btn(text, "Записаться на занятие"):
+        data = load_data()
+        days = get_workdays()
+        available_days = []
+        days_buttons = []
+        for name, date in days:
+            if has_day_record(user_id, date):
+                days_buttons.append(f"❌ {name} {date} (уже записаны)")
+            elif week_limit(user_id, date) >= 2:
+                days_buttons.append(f"🚫 {name} {date} (лимит)")
+            else:
+                days_buttons.append(f"📆 {name} {date}")
+                available_days.append((name, date))
+        if not available_days:
+            await message.answer("Нет доступных дней для записи.", reply_markup=get_main_menu_kb(user_id))
+            return
+        kb = make_two_row_keyboard(days_buttons, extras=["🏠 Главное меню"])
+        markup = ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
+        user_context[user_id] = {"step": "choose_day", "days": [date for _, date in available_days]}
+        await message.answer(
+            "📅 <b>Шаг 1:</b> Выберите день для занятия. Слоты с ❌ или 🚫 недоступны для записи.",
+            reply_markup=markup
+        )
+        return
 
     if match_btn(text, "Моё расписание"):
         await send_user_schedule(message, user_id)
-        return
-
-    if match_btn(text, "Записаться на занятие"):
-        # ветка для записи, как раньше
         return
 
     if match_btn(text, "Написать инструктору"):
@@ -291,8 +308,6 @@ async def message_handler(message: types.Message):
         return
 
     await message.answer("⚠️ Неизвестная команда или неправильный формат. Используйте меню.", reply_markup=get_main_menu_kb(user_id))
-
-# --- остальные функции: auto_update_code, send_reminders, main без изменений ---
 
 async def auto_update_code():
     pass
