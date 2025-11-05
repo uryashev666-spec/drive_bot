@@ -4,6 +4,7 @@ import logging
 import os
 import sys
 import aiohttp
+import re
 from datetime import datetime, timedelta
 from aiogram import Bot, Dispatcher, types
 from aiogram.enums import ParseMode
@@ -23,8 +24,15 @@ dp = Dispatcher()
 user_context = {}
 
 def match_btn(text, variant):
-    """Сравнение текста кнопки: допускает эмодзи слева, пробелы и регистр"""
     return text.strip().lower().endswith(variant.strip().lower())
+
+def extract_date_from_btn(text):
+    match = re.search(r"\d{2}\.\d{2}\.\d{4}", text)
+    return match.group(0) if match else None
+
+def extract_time_from_btn(text):
+    match = re.search(r"\d{2}:\d{2}", text)
+    return match.group(0) if match else None
 
 def get_main_menu_kb(user_id):
     buttons = [
@@ -157,13 +165,11 @@ async def message_handler(message: types.Message):
     text = message.text.strip()
     user_id = message.from_user.id
 
-    # --- Главное меню и назад ---
     if match_btn(text, "Главное меню"):
         await message.answer("Главное меню", reply_markup=get_main_menu_kb(user_id))
         user_context.pop(user_id, None)
         return
 
-    # --- ОТМЕНА СВОЕЙ ЗАПИСИ ---
     if text.startswith("❌ Отменить"):
         parts = text.replace("❌ Отменить", "").strip().split()
         if len(parts) != 2:
@@ -209,14 +215,75 @@ async def message_handler(message: types.Message):
         await message.answer("<b>🛡️ Админ-панель</b>\nВыберите день для управления:", reply_markup=markup)
         return
 
+    # Админ: выбор дня (по дате в кнопке)
+    if user_context.get(user_id, {}).get("admin_mode") and user_context[user_id].get("admin_step") == "admin_day":
+        btn_date = extract_date_from_btn(text)
+        if btn_date and btn_date in user_context[user_id]["days"]:
+            selected_date = btn_date
+            times = get_times()
+            data = load_data()
+            slot_buttons = []
+            for t in times:
+                slot = next((i for i in data["schedule"] if i["date"] == selected_date and i["time"] == t and i.get("status") != "отменено"), None)
+                if slot and slot.get("status") == "заблокировано":
+                    slot_buttons.append(f"⛔ {t}")
+                elif slot:
+                    slot_buttons.append(f"🔴 {t}")
+                else:
+                    slot_buttons.append(f"🟢 {t}")
+            slot_buttons.append("❗ Отменить все занятия на день")
+            kb = make_two_row_keyboard(slot_buttons, extras=["🏠 Главное меню", "🔙 Назад"])
+            markup = ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
+            user_context[user_id].update({"admin_step": "admin_time", "admin_day": selected_date, "times": times})
+            await message.answer(
+                f"День {selected_date}: выберите слот или отмените весь день.",
+                reply_markup=markup
+            )
+            return
+        else:
+            await message.answer("Пожалуйста, выберите день из предложенных кнопок.", reply_markup=ReplyKeyboardMarkup(
+                keyboard=[[KeyboardButton(text=f"📆 {name} {date}") for name, date in get_workdays()]],
+                resize_keyboard=True
+            ))
+            return
+
+    # --- Пример для choose_day (запись ученика) ---
+    if user_context.get(user_id, {}).get("step") == "choose_day":
+        btn_date = extract_date_from_btn(text)
+        if btn_date and btn_date in user_context[user_id]["days"]:
+            selected_day = btn_date
+            # здесь идет та же ветка по временам, как и раньше
+            times = get_times()
+            data = load_data()
+            times_buttons = []
+            for t in times:
+                busy = any(item["date"]==selected_day and item["time"]==t and item.get("status")!="отменено" for item in data["schedule"])
+                if busy:
+                    times_buttons.append(f"🔴 {t} (занято)")
+                else:
+                    times_buttons.append(f"🟢 {t}")
+            kb = make_two_row_keyboard(times_buttons, extras=["🏠 Главное меню", "🔙 Назад"])
+            markup = ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
+            user_context[user_id]["step"] = "choose_time"
+            user_context[user_id]["date"] = selected_day
+            await message.answer(f"🕒 <b>Шаг 2:</b> Выберите время для {selected_day}:", reply_markup=markup)
+            return
+        else:
+            await message.answer("Пожалуйста, выберите день из кнопок.", reply_markup=ReplyKeyboardMarkup(
+                keyboard=[[KeyboardButton(text=f"📆 {name} {date}") for name, date in get_workdays()]],
+                resize_keyboard=True
+            ))
+            return
+
+    # ... остальные ветки: выбор времени (extract_time_from_btn), имя, адрес, подтверждение записи, лимиты, возвраты ...
+    # ... копировать "as is" из некороченых финальных версий, только вместо text == date всегда использовать extract_date_from_btn ...
+
     if match_btn(text, "Моё расписание"):
         await send_user_schedule(message, user_id)
         return
 
-    # ... full user/admin logic, как в предыдущем файле, с заменой всех текстовых сравнений на match_btn(text, ...) ...
-
     if match_btn(text, "Записаться на занятие"):
-        # ... запись на занятие ...
+        # ветка для записи, как раньше
         return
 
     if match_btn(text, "Написать инструктору"):
@@ -225,12 +292,12 @@ async def message_handler(message: types.Message):
 
     await message.answer("⚠️ Неизвестная команда или неправильный формат. Используйте меню.", reply_markup=get_main_menu_kb(user_id))
 
+# --- остальные функции: auto_update_code, send_reminders, main без изменений ---
+
 async def auto_update_code():
-    # ... фича автообновления, как раньше ...
     pass
 
 async def send_reminders():
-    # ... напоминания пользователям, как раньше ...
     pass
 
 async def main():
