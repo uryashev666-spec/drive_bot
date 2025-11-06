@@ -37,12 +37,12 @@ def extract_time_from_btn(text):
 
 def get_main_menu_kb(user_id):
     buttons = [
-        [KeyboardButton(text="📅 Моё расписание")],
-        [KeyboardButton(text="✏️ Записаться на занятие")],
-        [KeyboardButton(text="💬 Написать инструктору")]
+        [KeyboardButton(text="рџ“… РњРѕС‘ СЂР°СЃРїРёСЃР°РЅРёРµ")],
+        [KeyboardButton(text="вњЏпёЏ Р—Р°РїРёСЃР°С‚СЊСЃСЏ РЅР° Р·Р°РЅСЏС‚РёРµ")],
+        [KeyboardButton(text="рџ’¬ РќР°РїРёСЃР°С‚СЊ РёРЅСЃС‚СЂСѓРєС‚РѕСЂСѓ")]
     ]
     if user_id == YOUR_TELEGRAM_ID:
-        buttons.insert(0, [KeyboardButton(text="🛡️ Админ-панель")])
+        buttons.insert(0, [KeyboardButton(text="рџ›ЎпёЏ РђРґРјРёРЅ-РїР°РЅРµР»СЊ")])
     return ReplyKeyboardMarkup(
         keyboard=buttons, resize_keyboard=True, one_time_keyboard=False
     )
@@ -72,7 +72,7 @@ def save_users_info(info):
 users_info = load_users_info()
 
 def get_workdays(count=14):
-    weekdays_ru = ["Пн", "Вт", "Ср", "Чт", "Пт"]
+    weekdays_ru = ["РџРЅ", "Р’С‚", "РЎСЂ", "Р§С‚", "РџС‚"]
     today = datetime.today()
     days = []
     current = today + timedelta(days=1)
@@ -107,7 +107,7 @@ def make_two_row_keyboard(button_texts, extras=[]):
 def get_user_records(user_id):
     data = load_data()
     return [item for item in data["schedule"]
-            if item.get("user_id") == user_id and item.get("status") != "отменено"]
+            if item.get("user_id") == user_id and item.get("status") != "РѕС‚РјРµРЅРµРЅРѕ"]
 
 def week_limit(user_id, target_date):
     user_records = get_user_records(user_id)
@@ -124,7 +124,7 @@ async def send_user_schedule(message: types.Message, user_id: int):
     now = datetime.now()
     my_records = [
         item for item in data["schedule"]
-        if item.get("user_id") == user_id and item.get("status") != "отменено"
+        if item.get("user_id") == user_id and item.get("status") != "РѕС‚РјРµРЅРµРЅРѕ"
         and safe_datetime(item['date'], item['time']) and safe_datetime(item['date'], item['time']) > now
     ]
     my_records.sort(key=lambda item: safe_datetime(item['date'], item['time']) or datetime.max)
@@ -132,32 +132,32 @@ async def send_user_schedule(message: types.Message, user_id: int):
     buttons = []
     for idx, item in enumerate(my_records):
         time_left = (safe_datetime(item['date'], item['time']) - now).total_seconds()
-        text += f"🟢 Моя запись {idx+1}:\n📆 {item['date']}\n🕒 {item['time']}\n📍 {item['address']}\n"
+        text += f"рџџў РњРѕСЏ Р·Р°РїРёСЃСЊ {idx+1}:\nрџ“† {item['date']}\nрџ•’ {item['time']}\nрџ“Ќ {item['address']}\n"
         if time_left > 0:
-            label = f"❌ Отменить {item['date']} {item['time']}"
+            label = f"вќЊ РћС‚РјРµРЅРёС‚СЊ {item['date']} {item['time']}"
             buttons.append([KeyboardButton(text=label)])
         text += "\n"
     if not text:
-        text = "У вас нет записей на ближайшее время."
+        text = "РЈ РІР°СЃ РЅРµС‚ Р·Р°РїРёСЃРµР№ РЅР° Р±Р»РёР¶Р°Р№С€РµРµ РІСЂРµРјСЏ."
     markup = ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True) if buttons else None
     await message.answer(text, reply_markup=markup if markup else None)
 
 async def send_record_confirmation(message, user_id, kb):
     ctx = user_context[user_id]
     msg = (
-        f"❕ Проверьте все данные!\n"
-        f"📆 Дата: {ctx['date']}\n"
-        f"🕒 Время: {ctx['time']}\n"
-        f"👤 ФИО: {ctx.get('fio','')}\n"
-        f"📍 Адрес: {ctx['address']}\n\n"
-        f"Если всё правильно — подтвердите!"
+        f"вќ• РџСЂРѕРІРµСЂСЊС‚Рµ РІСЃРµ РґР°РЅРЅС‹Рµ!\n"
+        f"рџ“† Р”Р°С‚Р°: {ctx['date']}\n"
+        f"рџ•’ Р’СЂРµРјСЏ: {ctx['time']}\n"
+        f"рџ‘¤ Р¤РРћ: {ctx.get('fio','')}\n"
+        f"рџ“Ќ РђРґСЂРµСЃ: {ctx['address']}\n\n"
+        f"Р•СЃР»Рё РІСЃС‘ РїСЂР°РІРёР»СЊРЅРѕ вЂ” РїРѕРґС‚РІРµСЂРґРёС‚Рµ!"
     )
     await message.answer(msg, reply_markup=ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True))
 
 @dp.message(Command("start"))
 async def start(message: types.Message):
     await message.answer(
-        "👋 Добро пожаловать!\nЯ, помощник автоинструктора. Для записи пользуйтесь главным меню ⬇️",
+        "рџ‘‹ Р”РѕР±СЂРѕ РїРѕР¶Р°Р»РѕРІР°С‚СЊ!\nРЇ, РїРѕРјРѕС‰РЅРёРє Р°РІС‚РѕРёРЅСЃС‚СЂСѓРєС‚РѕСЂР°. Р”Р»СЏ Р·Р°РїРёСЃРё РїРѕР»СЊР·СѓР№С‚РµСЃСЊ РіР»Р°РІРЅС‹Рј РјРµРЅСЋ в¬‡пёЏ",
         reply_markup=get_main_menu_kb(message.from_user.id)
     )
 
@@ -166,54 +166,54 @@ async def message_handler(message: types.Message):
     text = message.text.strip()
     user_id = message.from_user.id
 
-    if match_btn(text, "Главное меню"):
-        await message.answer("Главное меню", reply_markup=get_main_menu_kb(user_id))
+    if match_btn(text, "Р“Р»Р°РІРЅРѕРµ РјРµРЅСЋ"):
+        await message.answer("Р“Р»Р°РІРЅРѕРµ РјРµРЅСЋ", reply_markup=get_main_menu_kb(user_id))
         user_context.pop(user_id, None)
         return
 
-    if text.startswith("❌ Отменить"):
-        parts = text.replace("❌ Отменить", "").strip().split()
+    if text.startswith("вќЊ РћС‚РјРµРЅРёС‚СЊ"):
+        parts = text.replace("вќЊ РћС‚РјРµРЅРёС‚СЊ", "").strip().split()
         if len(parts) != 2:
-            await message.answer("Ошибка формата! Попробуйте отмену снова из расписания.", reply_markup=get_main_menu_kb(user_id))
+            await message.answer("РћС€РёР±РєР° С„РѕСЂРјР°С‚Р°! РџРѕРїСЂРѕР±СѓР№С‚Рµ РѕС‚РјРµРЅСѓ СЃРЅРѕРІР° РёР· СЂР°СЃРїРёСЃР°РЅРёСЏ.", reply_markup=get_main_menu_kb(user_id))
             return
         date_s, time_s = parts
         data = load_data()
-        record = next((item for item in data["schedule"] if item["date"]==date_s and item["time"]==time_s and item.get("user_id")==user_id and item.get("status")!="отменено"), None)
+        record = next((item for item in data["schedule"] if item["date"]==date_s and item["time"]==time_s and item.get("user_id")==user_id and item.get("status")!="РѕС‚РјРµРЅРµРЅРѕ"), None)
         if not record:
-            await message.answer("Запись не найдена или уже отменена.", reply_markup=get_main_menu_kb(user_id))
+            await message.answer("Р—Р°РїРёСЃСЊ РЅРµ РЅР°Р№РґРµРЅР° РёР»Рё СѓР¶Рµ РѕС‚РјРµРЅРµРЅР°.", reply_markup=get_main_menu_kb(user_id))
             return
         dt = safe_datetime(date_s, time_s)
         now = datetime.now()
         if (dt - now).total_seconds() < 0:
-            await message.answer("Эта запись в прошлом.", reply_markup=get_main_menu_kb(user_id))
+            await message.answer("Р­С‚Р° Р·Р°РїРёСЃСЊ РІ РїСЂРѕС€Р»РѕРј.", reply_markup=get_main_menu_kb(user_id))
             return
         if (dt - now).total_seconds() < 12*3600:
             await message.answer(
-                "Отмена этого занятия менее чем за 12 часов невозможна через бота. "
-                f"Если у вас изменились планы, срочно напишите инструктору лично: {TELEGRAM_LINK}",
+                "РћС‚РјРµРЅР° СЌС‚РѕРіРѕ Р·Р°РЅСЏС‚РёСЏ РјРµРЅРµРµ С‡РµРј Р·Р° 12 С‡Р°СЃРѕРІ РЅРµРІРѕР·РјРѕР¶РЅР° С‡РµСЂРµР· Р±РѕС‚Р°. "
+                f"Р•СЃР»Рё Сѓ РІР°СЃ РёР·РјРµРЅРёР»РёСЃСЊ РїР»Р°РЅС‹, СЃСЂРѕС‡РЅРѕ РЅР°РїРёС€РёС‚Рµ РёРЅСЃС‚СЂСѓРєС‚РѕСЂСѓ Р»РёС‡РЅРѕ: {TELEGRAM_LINK}",
                 reply_markup=get_main_menu_kb(user_id)
             )
             return
-        record["status"] = "отменено"
+        record["status"] = "РѕС‚РјРµРЅРµРЅРѕ"
         save_data(data)
         users_to_notify = set(item["user_id"] for item in data["schedule"]) | {YOUR_TELEGRAM_ID}
         for uid in users_to_notify:
             if uid != user_id:
                 try:
-                    await bot.send_message(uid, f"🔔 Освободился слот!\nДата: {date_s}, время: {time_s}. Можно записаться через меню.")
+                    await bot.send_message(uid, f"рџ”” РћСЃРІРѕР±РѕРґРёР»СЃСЏ СЃР»РѕС‚!\nР”Р°С‚Р°: {date_s}, РІСЂРµРјСЏ: {time_s}. РњРѕР¶РЅРѕ Р·Р°РїРёСЃР°С‚СЊСЃСЏ С‡РµСЂРµР· РјРµРЅСЋ.")
                 except Exception:
                     pass
-        await message.answer(f"✅ Занятие {date_s} {time_s} отменено и доступно для других учеников.", reply_markup=get_main_menu_kb(user_id))
+        await message.answer(f"вњ… Р—Р°РЅСЏС‚РёРµ {date_s} {time_s} РѕС‚РјРµРЅРµРЅРѕ Рё РґРѕСЃС‚СѓРїРЅРѕ РґР»СЏ РґСЂСѓРіРёС… СѓС‡РµРЅРёРєРѕРІ.", reply_markup=get_main_menu_kb(user_id))
         return
 
     # --- ADMIN PANEL ---
-    if user_id == YOUR_TELEGRAM_ID and match_btn(text, "Админ-панель"):
+    if user_id == YOUR_TELEGRAM_ID and match_btn(text, "РђРґРјРёРЅ-РїР°РЅРµР»СЊ"):
         days = get_workdays()
-        days_buttons = [f"📆 {name} {date}" for name, date in days]
-        kb = make_two_row_keyboard(days_buttons, extras=["🏠 Главное меню"])
+        days_buttons = [f"рџ“† {name} {date}" for name, date in days]
+        kb = make_two_row_keyboard(days_buttons, extras=["рџЏ  Р“Р»Р°РІРЅРѕРµ РјРµРЅСЋ"])
         markup = ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
         user_context[user_id] = {"admin_mode": True, "admin_step": "admin_day", "days": [date for _, date in days]}
-        await message.answer("🛡️ Админ-панель\nВыберите день для управления:", reply_markup=markup)
+        await message.answer("рџ›ЎпёЏ РђРґРјРёРЅ-РїР°РЅРµР»СЊ\nР’С‹Р±РµСЂРёС‚Рµ РґРµРЅСЊ РґР»СЏ СѓРїСЂР°РІР»РµРЅРёСЏ:", reply_markup=markup)
         return
 
     if user_context.get(user_id, {}).get("admin_mode") and user_context[user_id].get("admin_step") == "admin_day":
@@ -224,48 +224,48 @@ async def message_handler(message: types.Message):
             data = load_data()
             slot_buttons = []
             for t in times:
-                slot = next((i for i in data["schedule"] if i["date"] == selected_date and i["time"] == t and i.get("status") != "отменено"), None)
-                if slot and slot.get("status") == "заблокировано":
-                    slot_buttons.append(f"⛔ {t}")
+                slot = next((i for i in data["schedule"] if i["date"] == selected_date and i["time"] == t and i.get("status") != "РѕС‚РјРµРЅРµРЅРѕ"), None)
+                if slot and slot.get("status") == "Р·Р°Р±Р»РѕРєРёСЂРѕРІР°РЅРѕ":
+                    slot_buttons.append(f"в›” {t}")
                 elif slot:
-                    slot_buttons.append(f"🔴 {t}")
+                    slot_buttons.append(f"рџ”ґ {t}")
                 else:
-                    slot_buttons.append(f"🟢 {t}")
-            slot_buttons.append("❗ Отменить все занятия на день")
-            kb = make_two_row_keyboard(slot_buttons, extras=["🏠 Главное меню", "🔙 Назад"])
+                    slot_buttons.append(f"рџџў {t}")
+            slot_buttons.append("вќ— РћС‚РјРµРЅРёС‚СЊ РІСЃРµ Р·Р°РЅСЏС‚РёСЏ РЅР° РґРµРЅСЊ")
+            kb = make_two_row_keyboard(slot_buttons, extras=["рџЏ  Р“Р»Р°РІРЅРѕРµ РјРµРЅСЋ", "рџ”™ РќР°Р·Р°Рґ"])
             markup = ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
             user_context[user_id].update({"admin_step": "admin_time", "admin_day": selected_date, "times": times})
             await message.answer(
-                f"День {selected_date}: выберите слот или отмените весь день.",
+                f"Р”РµРЅСЊ {selected_date}: РІС‹Р±РµСЂРёС‚Рµ СЃР»РѕС‚ РёР»Рё РѕС‚РјРµРЅРёС‚Рµ РІРµСЃСЊ РґРµРЅСЊ.",
                 reply_markup=markup
             )
             return
         else:
-            await message.answer("Пожалуйста, выберите день из предложенных кнопок.", reply_markup=ReplyKeyboardMarkup(
-                keyboard=[[KeyboardButton(text=f"📆 {name} {date}") for name, date in get_workdays()]],
+            await message.answer("РџРѕР¶Р°Р»СѓР№СЃС‚Р°, РІС‹Р±РµСЂРёС‚Рµ РґРµРЅСЊ РёР· РїСЂРµРґР»РѕР¶РµРЅРЅС‹С… РєРЅРѕРїРѕРє.", reply_markup=ReplyKeyboardMarkup(
+                keyboard=[[KeyboardButton(text=f"рџ“† {name} {date}") for name, date in get_workdays()]],
                 resize_keyboard=True
             ))
             return
 
-    # --- ADMIN TIME: обработка отмены всех занятий на день ---
+    # --- ADMIN TIME: РѕР±СЂР°Р±РѕС‚РєР° РѕС‚РјРµРЅС‹ РІСЃРµС… Р·Р°РЅСЏС‚РёР№ РЅР° РґРµРЅСЊ ---
     if user_context.get(user_id, {}).get("admin_mode") and user_context[user_id].get("admin_step") == "admin_time":
-        # Обработка "Отменить все занятия на день"
-        if text == "❗ Отменить все занятия на день":
+        # РћР±СЂР°Р±РѕС‚РєР° "РћС‚РјРµРЅРёС‚СЊ РІСЃРµ Р·Р°РЅСЏС‚РёСЏ РЅР° РґРµРЅСЊ"
+        if text == "вќ— РћС‚РјРµРЅРёС‚СЊ РІСЃРµ Р·Р°РЅСЏС‚РёСЏ РЅР° РґРµРЅСЊ":
             selected_date = user_context[user_id].get("admin_day")
             data = load_data()
             
             cancelled_count = 0
             for item in data["schedule"]:
-                if item["date"] == selected_date and item.get("status") != "отменено":
-                    item["status"] = "отменено"
+                if item["date"] == selected_date and item.get("status") != "РѕС‚РјРµРЅРµРЅРѕ":
+                    item["status"] = "РѕС‚РјРµРЅРµРЅРѕ"
                     cancelled_count += 1
                     
-                    # Уведомить пользователя об отмене
+                    # РЈРІРµРґРѕРјРёС‚СЊ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ РѕР± РѕС‚РјРµРЅРµ
                     try:
                         await bot.send_message(
                             item["user_id"],
-                            f"❌ Ваше занятие {selected_date} {item['time']} отменено инструктором.\n"
-                            f"Пожалуйста, запишитесь на другое время."
+                            f"вќЊ Р’Р°С€Рµ Р·Р°РЅСЏС‚РёРµ {selected_date} {item['time']} РѕС‚РјРµРЅРµРЅРѕ РёРЅСЃС‚СЂСѓРєС‚РѕСЂРѕРј.\n"
+                            f"РџРѕР¶Р°Р»СѓР№СЃС‚Р°, Р·Р°РїРёС€РёС‚РµСЃСЊ РЅР° РґСЂСѓРіРѕРµ РІСЂРµРјСЏ."
                         )
                     except Exception:
                         pass
@@ -273,75 +273,75 @@ async def message_handler(message: types.Message):
             save_data(data)
             
             await message.answer(
-                f"✅ Отменено занятий на {selected_date}: {cancelled_count}\n"
-                f"Все ученики получили уведомления.",
+                f"вњ… РћС‚РјРµРЅРµРЅРѕ Р·Р°РЅСЏС‚РёР№ РЅР° {selected_date}: {cancelled_count}\n"
+                f"Р’СЃРµ СѓС‡РµРЅРёРєРё РїРѕР»СѓС‡РёР»Рё СѓРІРµРґРѕРјР»РµРЅРёСЏ.",
                 reply_markup=get_main_menu_kb(user_id)
             )
             user_context.pop(user_id, None)
             return
         
-        # Обработка выбора конкретного слота
+        # РћР±СЂР°Р±РѕС‚РєР° РІС‹Р±РѕСЂР° РєРѕРЅРєСЂРµС‚РЅРѕРіРѕ СЃР»РѕС‚Р°
         chosen_time = extract_time_from_btn(text)
         if chosen_time and chosen_time in user_context[user_id]["times"]:
             selected_date = user_context[user_id]["admin_day"]
             data = load_data()
-            slot = next((i for i in data["schedule"] if i["date"] == selected_date and i["time"] == chosen_time and i.get("status") != "отменено"), None)
+            slot = next((i for i in data["schedule"] if i["date"] == selected_date and i["time"] == chosen_time and i.get("status") != "РѕС‚РјРµРЅРµРЅРѕ"), None)
             
             if slot:
-                # Слот занят - показываем информацию и кнопки управления
-                student_info = f"🔴 Слот занят:\n📆 {selected_date}\n🕒 {chosen_time}\n👤 {slot.get('surname','')} {slot.get('name','')}\n📍 {slot['address']}"
+                # РЎР»РѕС‚ Р·Р°РЅСЏС‚ - РїРѕРєР°Р·С‹РІР°РµРј РёРЅС„РѕСЂРјР°С†РёСЋ Рё РєРЅРѕРїРєРё СѓРїСЂР°РІР»РµРЅРёСЏ
+                student_info = f"рџ”ґ РЎР»РѕС‚ Р·Р°РЅСЏС‚:\nрџ“† {selected_date}\nрџ•’ {chosen_time}\nрџ‘¤ {slot.get('surname','')} {slot.get('name','')}\nрџ“Ќ {slot['address']}"
                 kb = [
-                    [KeyboardButton(text="❌ Отменить занятие")],
-                    [KeyboardButton(text="🏠 Главное меню"), KeyboardButton(text="🔙 Назад")]
+                    [KeyboardButton(text="вќЊ РћС‚РјРµРЅРёС‚СЊ Р·Р°РЅСЏС‚РёРµ")],
+                    [KeyboardButton(text="рџЏ  Р“Р»Р°РІРЅРѕРµ РјРµРЅСЋ"), KeyboardButton(text="рџ”™ РќР°Р·Р°Рґ")]
                 ]
                 user_context[user_id]["admin_selected_slot"] = {"date": selected_date, "time": chosen_time}
                 await message.answer(student_info, reply_markup=ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True))
                 return
             else:
-                # Слот свободен - предлагаем заблокировать
+                # РЎР»РѕС‚ СЃРІРѕР±РѕРґРµРЅ - РїСЂРµРґР»Р°РіР°РµРј Р·Р°Р±Р»РѕРєРёСЂРѕРІР°С‚СЊ
                 kb = [
-                    [KeyboardButton(text="⛔ Заблокировать слот")],
-                    [KeyboardButton(text="🏠 Главное меню"), KeyboardButton(text="🔙 Назад")]
+                    [KeyboardButton(text="в›” Р—Р°Р±Р»РѕРєРёСЂРѕРІР°С‚СЊ СЃР»РѕС‚")],
+                    [KeyboardButton(text="рџЏ  Р“Р»Р°РІРЅРѕРµ РјРµРЅСЋ"), KeyboardButton(text="рџ”™ РќР°Р·Р°Рґ")]
                 ]
                 user_context[user_id]["admin_selected_slot"] = {"date": selected_date, "time": chosen_time}
-                await message.answer(f"🟢 Слот свободен: {selected_date} {chosen_time}", reply_markup=ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True))
+                await message.answer(f"рџџў РЎР»РѕС‚ СЃРІРѕР±РѕРґРµРЅ: {selected_date} {chosen_time}", reply_markup=ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True))
                 return
 
-    # Обработка действий админа над выбранным слотом
+    # РћР±СЂР°Р±РѕС‚РєР° РґРµР№СЃС‚РІРёР№ Р°РґРјРёРЅР° РЅР°Рґ РІС‹Р±СЂР°РЅРЅС‹Рј СЃР»РѕС‚РѕРј
     if user_context.get(user_id, {}).get("admin_mode") and user_context[user_id].get("admin_selected_slot"):
         slot_info = user_context[user_id]["admin_selected_slot"]
         
-        if text == "❌ Отменить занятие":
+        if text == "вќЊ РћС‚РјРµРЅРёС‚СЊ Р·Р°РЅСЏС‚РёРµ":
             data = load_data()
-            record = next((i for i in data["schedule"] if i["date"] == slot_info["date"] and i["time"] == slot_info["time"] and i.get("status") != "отменено"), None)
+            record = next((i for i in data["schedule"] if i["date"] == slot_info["date"] and i["time"] == slot_info["time"] and i.get("status") != "РѕС‚РјРµРЅРµРЅРѕ"), None)
             if record:
-                record["status"] = "отменено"
+                record["status"] = "РѕС‚РјРµРЅРµРЅРѕ"
                 save_data(data)
                 try:
-                    await bot.send_message(record["user_id"], f"❌ Ваше занятие {slot_info['date']} {slot_info['time']} отменено инструктором.")
+                    await bot.send_message(record["user_id"], f"вќЊ Р’Р°С€Рµ Р·Р°РЅСЏС‚РёРµ {slot_info['date']} {slot_info['time']} РѕС‚РјРµРЅРµРЅРѕ РёРЅСЃС‚СЂСѓРєС‚РѕСЂРѕРј.")
                 except Exception:
                     pass
-                await message.answer(f"✅ Занятие {slot_info['date']} {slot_info['time']} отменено.", reply_markup=get_main_menu_kb(user_id))
+                await message.answer(f"вњ… Р—Р°РЅСЏС‚РёРµ {slot_info['date']} {slot_info['time']} РѕС‚РјРµРЅРµРЅРѕ.", reply_markup=get_main_menu_kb(user_id))
             user_context.pop(user_id, None)
             return
         
-        if text == "⛔ Заблокировать слот":
+        if text == "в›” Р—Р°Р±Р»РѕРєРёСЂРѕРІР°С‚СЊ СЃР»РѕС‚":
             data = load_data()
             data["schedule"].append({
                 "date": slot_info["date"],
                 "time": slot_info["time"],
-                "status": "заблокировано",
+                "status": "Р·Р°Р±Р»РѕРєРёСЂРѕРІР°РЅРѕ",
                 "user_id": YOUR_TELEGRAM_ID,
                 "name": "",
                 "surname": "",
                 "address": ""
             })
             save_data(data)
-            await message.answer(f"⛔ Слот {slot_info['date']} {slot_info['time']} заблокирован.", reply_markup=get_main_menu_kb(user_id))
+            await message.answer(f"в›” РЎР»РѕС‚ {slot_info['date']} {slot_info['time']} Р·Р°Р±Р»РѕРєРёСЂРѕРІР°РЅ.", reply_markup=get_main_menu_kb(user_id))
             user_context.pop(user_id, None)
             return
 
-    # --- USER choose_day: по дате из кнопки ---
+    # --- USER choose_day: РїРѕ РґР°С‚Рµ РёР· РєРЅРѕРїРєРё ---
     if user_context.get(user_id, {}).get("step") == "choose_day":
         btn_date = extract_date_from_btn(text)
         if btn_date and btn_date in user_context[user_id]["days"]:
@@ -350,38 +350,38 @@ async def message_handler(message: types.Message):
             data = load_data()
             times_buttons = []
             for t in times:
-                busy = any(item["date"]==selected_day and item["time"]==t and item.get("status")!="отменено" for item in data["schedule"])
+                busy = any(item["date"]==selected_day and item["time"]==t and item.get("status")!="РѕС‚РјРµРЅРµРЅРѕ" for item in data["schedule"])
                 if busy:
-                    times_buttons.append(f"🔴 {t} (занято)")
+                    times_buttons.append(f"рџ”ґ {t} (Р·Р°РЅСЏС‚Рѕ)")
                 else:
-                    times_buttons.append(f"🟢 {t}")
-            kb = make_two_row_keyboard(times_buttons, extras=["🏠 Главное меню", "🔙 Назад"])
+                    times_buttons.append(f"рџџў {t}")
+            kb = make_two_row_keyboard(times_buttons, extras=["рџЏ  Р“Р»Р°РІРЅРѕРµ РјРµРЅСЋ", "рџ”™ РќР°Р·Р°Рґ"])
             markup = ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
             user_context[user_id]["step"] = "choose_time"
             user_context[user_id]["date"] = selected_day
-            await message.answer(f"🕒 Шаг 2: Выберите время для {selected_day}:", reply_markup=markup)
+            await message.answer(f"рџ•’ РЁР°Рі 2: Р’С‹Р±РµСЂРёС‚Рµ РІСЂРµРјСЏ РґР»СЏ {selected_day}:", reply_markup=markup)
             return
         else:
-            await message.answer("Пожалуйста, выберите день из кнопок.", reply_markup=ReplyKeyboardMarkup(
-                keyboard=[[KeyboardButton(text=f"📆 {name} {date}") for name, date in get_workdays()]],
+            await message.answer("РџРѕР¶Р°Р»СѓР№СЃС‚Р°, РІС‹Р±РµСЂРёС‚Рµ РґРµРЅСЊ РёР· РєРЅРѕРїРѕРє.", reply_markup=ReplyKeyboardMarkup(
+                keyboard=[[KeyboardButton(text=f"рџ“† {name} {date}") for name, date in get_workdays()]],
                 resize_keyboard=True
             ))
             return
 
-    # --- USER choose_time: универсальный ---
+    # --- USER choose_time: СѓРЅРёРІРµСЂСЃР°Р»СЊРЅС‹Р№ ---
     if user_context.get(user_id, {}).get("step") == "choose_time":
         chosen_time = extract_time_from_btn(text)
         if not chosen_time or chosen_time not in get_times():
-            await message.answer("Пожалуйста, выберите время из кнопок.", reply_markup=ReplyKeyboardMarkup(
-                keyboard=[[KeyboardButton(text=f"🟢 {t}") for t in get_times()]],
+            await message.answer("РџРѕР¶Р°Р»СѓР№СЃС‚Р°, РІС‹Р±РµСЂРёС‚Рµ РІСЂРµРјСЏ РёР· РєРЅРѕРїРѕРє.", reply_markup=ReplyKeyboardMarkup(
+                keyboard=[[KeyboardButton(text=f"рџџў {t}") for t in get_times()]],
                 resize_keyboard=True
             ))
             return
 
         selected_day = user_context[user_id]["date"]
-        busy = any(item["date"]==selected_day and item["time"]==chosen_time and item.get("status")!="отменено" for item in load_data()["schedule"])
+        busy = any(item["date"]==selected_day and item["time"]==chosen_time and item.get("status")!="РѕС‚РјРµРЅРµРЅРѕ" for item in load_data()["schedule"])
         if busy:
-            await message.answer("Это время уже занято. Выберите другой слот!", reply_markup=get_main_menu_kb(user_id))
+            await message.answer("Р­С‚Рѕ РІСЂРµРјСЏ СѓР¶Рµ Р·Р°РЅСЏС‚Рѕ. Р’С‹Р±РµСЂРёС‚Рµ РґСЂСѓРіРѕР№ СЃР»РѕС‚!", reply_markup=get_main_menu_kb(user_id))
             return
 
         user_context[user_id]["step"] = "choose_fio"
@@ -394,18 +394,18 @@ async def message_handler(message: types.Message):
             user_context[user_id]["fio"] = fio
             user_context[user_id]["step"] = "choose_address"
             if address:
-                kb = make_two_row_keyboard([], extras=["🏠 Главное меню", "🔙 Назад", "✅ Оставить адрес"])
-                await message.answer(f"📍 Ваш адрес: {address}\nЕсли нужно изменить — напишите новый.\nЕсли подходит — нажмите 'Оставить адрес'.", reply_markup=ReplyKeyboardMarkup(keyboard=kb,resize_keyboard=True))
+                kb = make_two_row_keyboard([], extras=["рџЏ  Р“Р»Р°РІРЅРѕРµ РјРµРЅСЋ", "рџ”™ РќР°Р·Р°Рґ", "вњ… РћСЃС‚Р°РІРёС‚СЊ Р°РґСЂРµСЃ"])
+                await message.answer(f"рџ“Ќ Р’Р°С€ Р°РґСЂРµСЃ: {address}\nР•СЃР»Рё РЅСѓР¶РЅРѕ РёР·РјРµРЅРёС‚СЊ вЂ” РЅР°РїРёС€РёС‚Рµ РЅРѕРІС‹Р№.\nР•СЃР»Рё РїРѕРґС…РѕРґРёС‚ вЂ” РЅР°Р¶РјРёС‚Рµ 'РћСЃС‚Р°РІРёС‚СЊ Р°РґСЂРµСЃ'.", reply_markup=ReplyKeyboardMarkup(keyboard=kb,resize_keyboard=True))
             else:
-                kb = make_two_row_keyboard([], extras=["🏠 Главное меню", "🔙 Назад"])
-                await message.answer("📍 Введите адрес (куда подъехать):", reply_markup=ReplyKeyboardMarkup(keyboard=kb,resize_keyboard=True))
+                kb = make_two_row_keyboard([], extras=["рџЏ  Р“Р»Р°РІРЅРѕРµ РјРµРЅСЋ", "рџ”™ РќР°Р·Р°Рґ"])
+                await message.answer("рџ“Ќ Р’РІРµРґРёС‚Рµ Р°РґСЂРµСЃ (РєСѓРґР° РїРѕРґСЉРµС…Р°С‚СЊ):", reply_markup=ReplyKeyboardMarkup(keyboard=kb,resize_keyboard=True))
             return
         else:
-            kb = make_two_row_keyboard([], extras=["🏠 Главное меню", "🔙 Назад"])
-            await message.answer("👤 Введите фамилию и имя (пример: Иванов Иван):", reply_markup=ReplyKeyboardMarkup(keyboard=kb,resize_keyboard=True))
+            kb = make_two_row_keyboard([], extras=["рџЏ  Р“Р»Р°РІРЅРѕРµ РјРµРЅСЋ", "рџ”™ РќР°Р·Р°Рґ"])
+            await message.answer("рџ‘¤ Р’РІРµРґРёС‚Рµ С„Р°РјРёР»РёСЋ Рё РёРјСЏ (РїСЂРёРјРµСЂ: РРІР°РЅРѕРІ РРІР°РЅ):", reply_markup=ReplyKeyboardMarkup(keyboard=kb,resize_keyboard=True))
             return
 
-    # --- USER: этап ввода ФИО ---
+    # --- USER: СЌС‚Р°Рї РІРІРѕРґР° Р¤РРћ ---
     if user_context.get(user_id, {}).get("step") == "choose_fio":
         fio = text.strip()
         uid_str = str(user_id)
@@ -416,17 +416,17 @@ async def message_handler(message: types.Message):
         user_context[user_id]["step"] = "choose_address"
         address = users_info.get(uid_str, {}).get("address")
         if address:
-            kb = make_two_row_keyboard([], extras=["🏠 Главное меню", "🔙 Назад", "✅ Оставить адрес"])
-            await message.answer(f"📍 Ваш адрес: {address}\nЕсли нужно изменить — напишите новый.\nЕсли подходит — нажмите 'Оставить адрес'.", reply_markup=ReplyKeyboardMarkup(keyboard=kb,resize_keyboard=True))
+            kb = make_two_row_keyboard([], extras=["рџЏ  Р“Р»Р°РІРЅРѕРµ РјРµРЅСЋ", "рџ”™ РќР°Р·Р°Рґ", "вњ… РћСЃС‚Р°РІРёС‚СЊ Р°РґСЂРµСЃ"])
+            await message.answer(f"рџ“Ќ Р’Р°С€ Р°РґСЂРµСЃ: {address}\nР•СЃР»Рё РЅСѓР¶РЅРѕ РёР·РјРµРЅРёС‚СЊ вЂ” РЅР°РїРёС€РёС‚Рµ РЅРѕРІС‹Р№.\nР•СЃР»Рё РїРѕРґС…РѕРґРёС‚ вЂ” РЅР°Р¶РјРёС‚Рµ 'РћСЃС‚Р°РІРёС‚СЊ Р°РґСЂРµСЃ'.", reply_markup=ReplyKeyboardMarkup(keyboard=kb,resize_keyboard=True))
         else:
-            kb = make_two_row_keyboard([], extras=["🏠 Главное меню", "🔙 Назад"])
-            await message.answer("📍 Введите адрес (куда подъехать):", reply_markup=ReplyKeyboardMarkup(keyboard=kb,resize_keyboard=True))
+            kb = make_two_row_keyboard([], extras=["рџЏ  Р“Р»Р°РІРЅРѕРµ РјРµРЅСЋ", "рџ”™ РќР°Р·Р°Рґ"])
+            await message.answer("рџ“Ќ Р’РІРµРґРёС‚Рµ Р°РґСЂРµСЃ (РєСѓРґР° РїРѕРґСЉРµС…Р°С‚СЊ):", reply_markup=ReplyKeyboardMarkup(keyboard=kb,resize_keyboard=True))
         return
 
-    # --- USER: этап адрес ---
+    # --- USER: СЌС‚Р°Рї Р°РґСЂРµСЃ ---
     if user_context.get(user_id, {}).get("step") == "choose_address":
         uid_str = str(user_id)
-        if text == "✅ Оставить адрес":
+        if text == "вњ… РћСЃС‚Р°РІРёС‚СЊ Р°РґСЂРµСЃ":
             address = users_info.get(uid_str, {}).get("address")
         else:
             address = text.strip()
@@ -435,13 +435,13 @@ async def message_handler(message: types.Message):
             save_users_info(users_info)
         user_context[user_id]["address"] = address
         user_context[user_id]["step"] = "confirm_record"
-        kb = make_two_row_keyboard([], extras=["✅ Подтвердить запись", "🔙 Назад", "🏠 Главное меню"])
+        kb = make_two_row_keyboard([], extras=["вњ… РџРѕРґС‚РІРµСЂРґРёС‚СЊ Р·Р°РїРёСЃСЊ", "рџ”™ РќР°Р·Р°Рґ", "рџЏ  Р“Р»Р°РІРЅРѕРµ РјРµРЅСЋ"])
         await send_record_confirmation(message, user_id, kb)
         return
 
-    # --- USER: финальное подтверждение ---
+    # --- USER: С„РёРЅР°Р»СЊРЅРѕРµ РїРѕРґС‚РІРµСЂР¶РґРµРЅРёРµ ---
     if user_context.get(user_id, {}).get("step") == "confirm_record":
-        if text == "✅ Подтвердить запись":
+        if text == "вњ… РџРѕРґС‚РІРµСЂРґРёС‚СЊ Р·Р°РїРёСЃСЊ":
             ctx = user_context[user_id]
             fio_words = ctx.get("fio", "").split()
             surname = fio_words[0] if len(fio_words) >= 1 else ""
@@ -451,4 +451,119 @@ async def message_handler(message: types.Message):
                 "date": ctx["date"],
                 "time": ctx["time"],
                 "name": name,
-                "surname":
+                "surname": surname,
+                "address": ctx["address"],
+                "user_id": user_id
+            })
+            save_data(data)
+            msg = (
+                f"вњ… Р—Р°РїРёСЃСЊ РїРѕРґС‚РІРµСЂР¶РґРµРЅР°!\n"
+                f"рџ“† Р”Р°С‚Р°: {ctx['date']}\n"
+                f"рџ•’ Р’СЂРµРјСЏ: {ctx['time']}\n"
+                f"рџ‘¤ Р¤РРћ: {ctx['fio']}\n"
+                f"рџ“Ќ РђРґСЂРµСЃ: {ctx['address']}"
+            )
+            await message.answer(msg, reply_markup=get_main_menu_kb(user_id))
+            await bot.send_message(YOUR_TELEGRAM_ID, msg, parse_mode="HTML")
+            user_context.pop(user_id, None)
+            return
+
+    if match_btn(text, "РњРѕС‘ СЂР°СЃРїРёСЃР°РЅРёРµ"):
+        await send_user_schedule(message, user_id)
+        return
+
+    if match_btn(text, "Р—Р°РїРёСЃР°С‚СЊСЃСЏ РЅР° Р·Р°РЅСЏС‚РёРµ"):
+        data = load_data()
+        days = get_workdays()
+        available_days = []
+        days_buttons = []
+        for name, date in days:
+            if has_day_record(user_id, date):
+                days_buttons.append(f"вќЊ {name} {date} (СѓР¶Рµ Р·Р°РїРёСЃР°РЅС‹)")
+            elif week_limit(user_id, date) >= 2:
+                days_buttons.append(f"рџљ« {name} {date} (Р»РёРјРёС‚)")
+            else:
+                days_buttons.append(f"рџ“† {name} {date}")
+                available_days.append((name, date))
+
+        if not available_days:
+            await message.answer("РќРµС‚ РґРѕСЃС‚СѓРїРЅС‹С… РґРЅРµР№ РґР»СЏ Р·Р°РїРёСЃРё.", reply_markup=get_main_menu_kb(user_id))
+            return
+
+        kb = make_two_row_keyboard(days_buttons, extras=["рџЏ  Р“Р»Р°РІРЅРѕРµ РјРµРЅСЋ"])
+        markup = ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
+        user_context[user_id] = {"step": "choose_day", "days": [date for _, date in available_days]}
+        await message.answer(
+            "рџ“… РЁР°Рі 1: Р’С‹Р±РµСЂРёС‚Рµ РґРµРЅСЊ РґР»СЏ Р·Р°РЅСЏС‚РёСЏ. РЎР»РѕС‚С‹ СЃ вќЊ РёР»Рё рџљ« РЅРµРґРѕСЃС‚СѓРїРЅС‹ РґР»СЏ Р·Р°РїРёСЃРё.",
+            reply_markup=markup
+        )
+        return
+
+    if match_btn(text, "РќР°РїРёСЃР°С‚СЊ РёРЅСЃС‚СЂСѓРєС‚РѕСЂСѓ"):
+        await message.answer("вњ‰пёЏ Р”Р»СЏ РѕР±СЂР°С‰РµРЅРёСЏ Рє РёРЅСЃС‚СЂСѓРєС‚РѕСЂСѓ РїРёС€РёС‚Рµ СЃСЋРґР°: " + TELEGRAM_LINK)
+        return
+
+    await message.answer("вљ пёЏ РќРµРёР·РІРµСЃС‚РЅР°СЏ РєРѕРјР°РЅРґР° РёР»Рё РЅРµРїСЂР°РІРёР»СЊРЅС‹Р№ С„РѕСЂРјР°С‚. РСЃРїРѕР»СЊР·СѓР№С‚Рµ РјРµРЅСЋ.", reply_markup=get_main_menu_kb(user_id))
+
+async def auto_update_code():
+    """
+    РђРІС‚РѕРјР°С‚РёС‡РµСЃРєР°СЏ РїСЂРѕРІРµСЂРєР° РѕР±РЅРѕРІР»РµРЅРёР№ РєРѕРґР° СЃ GitHub РєР°Р¶РґС‹Рµ 5 РјРёРЅСѓС‚.
+    РџСЂРё РѕР±РЅР°СЂСѓР¶РµРЅРёРё РёР·РјРµРЅРµРЅРёР№ - РїРµСЂРµР·Р°РїСѓСЃРє Р±РѕС‚Р°.
+    """
+    while True:
+        try:
+            await asyncio.sleep(300)  # РџСЂРѕРІРµСЂРєР° РєР°Р¶РґС‹Рµ 5 РјРёРЅСѓС‚ (300 СЃРµРєСѓРЅРґ)
+            
+            logging.info("рџ”Ќ РџСЂРѕРІРµСЂРєР° РѕР±РЅРѕРІР»РµРЅРёР№ СЃ GitHub...")
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.get(GITHUB_RAW_URL) as response:
+                    if response.status == 200:
+                        new_code = await response.text()
+                        
+                        # Р§РёС‚Р°РµРј С‚РµРєСѓС‰РёР№ РєРѕРґ
+                        with open(__file__, "r", encoding="utf-8") as f:
+                            current_code = f.read()
+                        
+                        # РЎСЂР°РІРЅРёРІР°РµРј
+                        if new_code != current_code:
+                            logging.info("вњ… РќР°Р№РґРµРЅРѕ РѕР±РЅРѕРІР»РµРЅРёРµ! РџСЂРёРјРµРЅСЏСЋ...")
+                            
+                            # РЎРѕС…СЂР°РЅСЏРµРј РЅРѕРІС‹Р№ РєРѕРґ
+                            with open(__file__, "w", encoding="utf-8") as f:
+                                f.write(new_code)
+                            
+                            # РЈРІРµРґРѕРјР»СЏРµРј Р°РґРјРёРЅР°
+                            try:
+                                await bot.send_message(
+                                    YOUR_TELEGRAM_ID,
+                                    "рџ”„ РћР±РЅР°СЂСѓР¶РµРЅРѕ РѕР±РЅРѕРІР»РµРЅРёРµ РєРѕРґР°!\nР‘РѕС‚ РїРµСЂРµР·Р°РїСѓСЃРєР°РµС‚СЃСЏ С‡РµСЂРµР· 3 СЃРµРєСѓРЅРґС‹..."
+                                )
+                            except Exception:
+                                pass
+                            
+                            await asyncio.sleep(3)
+                            
+                            # РџРµСЂРµР·Р°РїСѓСЃРє
+                            logging.info("рџ”„ РџРµСЂРµР·Р°РїСѓСЃРє Р±РѕС‚Р°...")
+                            os.execv(sys.executable, [sys.executable] + sys.argv)
+                        else:
+                            logging.info("вњ”пёЏ РљРѕРґ Р°РєС‚СѓР°Р»РµРЅ, РѕР±РЅРѕРІР»РµРЅРёР№ РЅРµС‚.")
+                    else:
+                        logging.warning(f"вљ пёЏ РћС€РёР±РєР° Р·Р°РіСЂСѓР·РєРё СЃ GitHub: {response.status}")
+                        
+        except Exception as e:
+            logging.error(f"вќЊ РћС€РёР±РєР° Р°РІС‚РѕРѕР±РЅРѕРІР»РµРЅРёСЏ: {e}")
+            await asyncio.sleep(300)  # РџРѕРІС‚РѕСЂ С‡РµСЂРµР· 5 РјРёРЅСѓС‚ РґР°Р¶Рµ РїСЂРё РѕС€РёР±РєРµ
+
+async def send_reminders():
+    pass
+
+async def main():
+    print("=== РќРѕРІС‹Р№ Р·Р°РїСѓСЃРє DRIVE_BOT ===")
+    asyncio.create_task(send_reminders())
+    asyncio.create_task(auto_update_code())
+    await dp.start_polling(bot)
+
+if __name__ == "__main__":
+    asyncio.run(main())
